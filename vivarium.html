@@ -110,12 +110,6 @@
     image-rendering:crisp-edges;
     display:block;
   }
-  /* glass glare */
-  .glare{
-    position:absolute;inset:0;pointer-events:none;
-    background:linear-gradient(115deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,0) 22%, rgba(255,255,255,0) 78%, rgba(255,255,255,.04) 100%);
-    mix-blend-mode:screen;
-  }
   .calltag{
     position:absolute;top:6px;left:50%;transform:translateX(-50%);
     font-size:10px;letter-spacing:2px;color:#0b0a08;background:var(--brass-hi);
@@ -123,6 +117,16 @@
     animation:blink 1s steps(2) infinite;
   }
   @keyframes blink{50%{opacity:.25}}
+
+  /* cinematic moment banner */
+  .moment{
+    position:absolute;inset:0;pointer-events:none;z-index:5;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+    opacity:0;transition:opacity .5s ease;
+  }
+  .moment.on{opacity:1}
+  .moment .mt{font-size:18px;letter-spacing:3px;color:var(--brass-hi);text-shadow:0 0 8px rgba(231,194,119,.7),0 2px 0 #000}
+  .moment .ms{font-size:11px;letter-spacing:1px;color:#e2ead8;margin-top:4px;text-shadow:0 1px 2px #000}
 
   /* Selector tabs */
   .tabs{display:flex;gap:6px;padding:0 10px 6px;justify-content:center}
@@ -245,8 +249,8 @@
 
     <div class="tankwrap">
       <canvas id="tank" width="256" height="224"></canvas>
-      <div class="glare"></div>
       <div class="calltag" id="callTag">! WANTS YOU !</div>
+      <div class="moment" id="moment"><div class="mt" id="momentT"></div><div class="ms" id="momentS"></div></div>
     </div>
 
     <div class="tabs" id="tabs"></div>
@@ -344,7 +348,7 @@ function freshState(){
     discipline:50, bond:6,
     asleep:false, lightsOn:true, sick:false, doses:0,
     calling:false, callKind:null, callSince:0,
-    poops:[], lastTick:now(), log:[], langTier:0,
+    poops:[], lastTick:now(), log:[], langTier:0, learned:[],
     tally:{meal:0,snack:0,playWin:0,playLose:0,clean:0,meds:0,scoldGood:0,scoldBad:0,talk:0}
   };
 }
@@ -358,17 +362,27 @@ function rampColor(stops,t){var n=stops.length-1,f=clamp(t,0,1)*n,i=Math.floor(f
 
 /* ---------- the save (up to 3 slots) ---------- */
 var SAVE_KEY="vivarium_save_v1";
+var APP_VERSION="0.1.0";          /* bump on release */
+var APP_BUILD="2026-06-21";       /* build date */
+var SCHEMA=2;                     /* save-format version, grown for props/curios/diary/learned */
 var save={slots:[null,null,null], active:0, muted:false};
 var mem=null; /* in-memory fallback when storage is blocked */
 
+function migrateSave(){
+  if(!save.slots){save.slots=[null,null,null];}
+  while(save.slots.length<3) save.slots.push(null);
+  if(typeof save.active!=="number") save.active=0;
+  if(!Array.isArray(save.props)) save.props=[];
+  if(!Array.isArray(save.curios)) save.curios=[];
+  if(!Array.isArray(save.tankCurios)) save.tankCurios=[];
+  if(!Array.isArray(save.diary)) save.diary=[];
+}
 function loadSave(){
   try{
     var raw=localStorage.getItem(SAVE_KEY);
     if(raw){save=JSON.parse(raw);}
   }catch(e){ if(mem){save=mem;} }
-  if(!save.slots){save.slots=[null,null,null];}
-  while(save.slots.length<3) save.slots.push(null);
-  if(typeof save.active!=="number") save.active=0;
+  migrateSave();
 }
 function writeSave(){
   mem=save;
@@ -412,6 +426,11 @@ function tickViv(slot, dtSec){
     if(Math.random()<pk && s.poops.length<6){
       s.poops.push({x:30+Math.floor(Math.random()*196), id:uid()});
     }
+  }
+  /* the Viv sometimes leaves a curio behind */
+  if(!s.asleep && save.tankCurios && save.tankCurios.length<3){
+    var ck=1-Math.pow(1-0.012, Math.min(mins,240));
+    if(Math.random()<ck) spawnCurio();
   }
   /* cleanliness drives sickness */
   var dirty=s.poops.length;
@@ -586,6 +605,68 @@ function catchUp(){
   }
 }
 
+/* ---------- while you were away ---------- */
+function computeGap(){ var t=now(), g=0; for(var i=0;i<3;i++){ var s=save.slots[i]; if(s && !s.s.egg && s.s.lastTick){ g=Math.max(g, t-s.s.lastTick); } } return g; }
+function durPhrase(ms){ var h=ms/3600000; if(h<2)return "for a little while"; if(h<6)return "for a few hours"; if(h<20)return "through the day"; if(h<30)return "all through the night"; if(h<54)return "for a whole day"; return "for a couple of days"; }
+function wxStoryWord(k){ return {clear:"the sun cross the sky",cloud:"the clouds drift by",rain:"the rain on the glass",snow:"the snow come down",storm:"the storm roll past",fog:"the mist settle in"}[k]||"the sky"; }
+function awayStory(v, gapMs, newCurios){
+  var r=mulberry32(hashStr(v.g.id+Math.floor(now()/3600000))), name=v.g.name;
+  var acts=["watched the light move across the glass","napped in a warm corner","hummed a little tune to itself","chased bubbles in the water","tidied its corner of the tank","practiced a few new sounds","dreamed of far places"];
+  var ptypes=save.props.map(function(p){return p.type;});
+  if(ptypes.indexOf("radio")>=0) acts.push("listened to the radio for hours");
+  if(ptypes.indexOf("lamp")>=0) acts.push("dozed under the lamp");
+  if(ptypes.indexOf("fern")>=0) acts.push("hid among the fern");
+  if(ptypes.indexOf("rock")>=0) acts.push("perched on the rock");
+  var act=pick(r,acts);
+  var wxp=(WX.on&&WX.kind)? wxStoryWord(WX.kind) : pick(r,["the passing clouds","the quiet dark","the morning light","the still water"]);
+  var s = (r()<0.6) ? (name+" watched "+wxp+" and "+act+" "+durPhrase(gapMs)+".") : (name+" "+act+" "+durPhrase(gapMs)+".");
+  if(newCurios>0){ var last=save.tankCurios[save.tankCurios.length-1]; if(last){ s+=" It left "+((CURIO_DEFS[last.type]||{}).label||"a curio")+" for you to find."; } }
+  if(v.s.sick) s+=" It is not feeling well now.";
+  else if(v.s.fullness<25) s+=" It is a little hungry now.";
+  else if(v.s.happy>72) s+=" It seems content to see you.";
+  return s;
+}
+function maybeAwayLog(gapMs, newCurios){
+  if(gapMs < 25*60*1000) return;
+  var v=activeViv(); if(!v || v.slot.egg) return;
+  var text=awayStory(v, gapMs, newCurios);
+  save.pendingAway=text;
+  if(!Array.isArray(save.diary)) save.diary=[];
+  save.diary.unshift({text:text, at:now()}); if(save.diary.length>14) save.diary.pop();
+  writeSave();
+}
+function relTime(ts){ var d=(now()-ts)/3600000; if(d<1)return "just now"; if(d<24)return Math.round(d)+"h ago"; return Math.round(d/24)+"d ago"; }
+function showAway(text){ openPanel("WHILE YOU WERE AWAY", '<p>'+escapeHtml(text)+'</p>'); }
+function openDiary(){
+  var d=save.diary||[];
+  var body=d.length? d.map(function(e){ return '<p style="margin:7px 0"><span style="color:var(--crt-dim);font-size:10px">'+relTime(e.at)+'</span><br>'+escapeHtml(e.text)+'</p>'; }).join('') : '<p style="color:var(--crt-dim)">No notes yet. After you have been away a while, your Viv will tell you what it got up to.</p>';
+  openPanel("FIELD NOTES", body);
+}
+function openCard(v){
+  var g=v.g, s=v.s, lex=vivLex(g), T=tallyOf(s), st=stageOf(v), days=Math.max(0,Math.floor(ageDays(v)));
+  var learned=(s.learned||[]).slice();
+  var gloss = learned.length
+    ? learned.map(function(c){ return '<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #1c1a16;padding:1px 0"><span class="glyph" style="color:var(--brass-hi)">'+escapeHtml(lex[c])+'</span><span style="color:var(--crt-dim)">'+escapeHtml((REAL[c]||c).replace(/^i /,"").replace(/ please$/,""))+'</span></div>'; }).join('')
+    : '<p style="color:var(--crt-dim)">No words decoded yet. Talk with '+escapeHtml(g.name)+' as your bond deepens.</p>';
+  var body=
+    '<div style="display:flex;gap:10px;align-items:center">'+
+      '<canvas id="cardBloom" width="120" height="120" style="width:96px;height:96px;border:1px solid #2a2620;border-radius:4px;background:#0a0a12"></canvas>'+
+      '<div style="font-size:12px;line-height:1.6">'+
+        '<div style="color:var(--brass-hi);font-size:14px;letter-spacing:1px">'+escapeHtml(g.name.toUpperCase())+'</div>'+
+        '<div style="color:var(--crt-dim)">'+st+' . '+escapeHtml(g.loco)+' . '+escapeHtml(temperamentOf(g))+'</div>'+
+        '<div style="color:var(--crt-dim)">'+days+' day'+(days===1?"":"s")+' together</div>'+
+        '<div style="color:var(--crt-dim)">bond '+Math.round(s.bond)+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<h3 style="margin:12px 0 4px;font-size:11px;letter-spacing:1px;color:var(--brass)">GLOSSARY ('+learned.length+' of '+CONCEPTS.length+')</h3>'+
+    '<div style="display:grid;gap:2px;font-size:12px">'+gloss+'</div>'+
+    '<h3 style="margin:12px 0 4px;font-size:11px;letter-spacing:1px;color:var(--brass)">HISTORY</h3>'+
+    '<div style="color:var(--crt-dim);font-size:12px;line-height:1.6">meals '+T.meal+' . snacks '+T.snack+' . play '+(T.playWin+T.playLose)+' . tidied '+T.clean+' . talks '+T.talk+'</div>';
+  openPanel("FIELD CARD", body, function(){
+    var c=document.getElementById("cardBloom"); if(c) paintBloom(c.getContext("2d"), v, 120, 120);
+  });
+}
+
 /* ---------- audio (tiny square blips, user gesture only) ---------- */
 var actx=null;
 function beep(freq,dur,type){
@@ -609,6 +690,68 @@ function sfx(name){
   else if(name==="call"){beep(990,0.07);setTimeout(function(){beep(990,0.07);},120);}
   else beep(500,0.06);
 }
+
+/* ---------- per-Viv voice (procedural, seeded from the genome) ---------- */
+/* Each Viv has its own pitch, timbre and little melodic scale, so you can tell
+   one Viv from another by ear. Its speech is rendered as a short run of blips
+   that walk that scale; babble is looser and more atonal than real words. */
+var SCALES=[
+  [1,9/8,5/4,3/2,5/3,2],
+  [1,6/5,4/3,3/2,9/5,2],
+  [1,9/8,6/5,3/2,8/5,2],
+  [1,5/4,3/2,15/8,2],
+  [1,8/7,4/3,3/2,12/7,2]
+];
+var VOICE_TYPES=["sine","triangle","square","sawtooth"];
+var _voiceCache={};
+function vivVoice(g){
+  if(_voiceCache[g.id]) return _voiceCache[g.id];
+  var r=mulberry32((g.seed^0x5bd1e995)>>>0), ge=g.genes;
+  var sizeBias=(ge.body===2?-70:ge.body===1?-40:0);     /* bigger bodies sound lower */
+  var ti=Math.floor(r()*VOICE_TYPES.length);
+  var vo={ base:280+r()*330+sizeBias, type:VOICE_TYPES[ti], type2:VOICE_TYPES[(ti+2)%4],
+           scale:SCALES[Math.floor(r()*SCALES.length)], glide:0.9+r()*0.08, seed:(g.seed^0x5bd1e995)>>>0 };
+  _voiceCache[g.id]=vo; return vo;
+}
+function voiceBlip(freq, when, dur, type, vol){
+  try{
+    var o=actx.createOscillator(), g=actx.createGain();
+    o.type=type; o.frequency.setValueAtTime(freq, when);
+    o.frequency.exponentialRampToValueAtTime(Math.max(55,freq*0.95), when+dur);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(vol, when+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, when+dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(when); o.stop(when+dur+0.02);
+  }catch(e){}
+}
+function ensureAudio(){ try{ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==="suspended") actx.resume(); return true; }catch(e){ return false; } }
+function speakVoice(v, text, glyph){
+  if(save.muted || !text || !ensureAudio()) return;
+  var g=v.g, vo=vivVoice(g), bare=text.replace(/[()\s.]+/g,"");
+  if(!bare) return;
+  var n = glyph ? Math.min(8, bare.length) : Math.min(11, Math.max(2, Math.round(bare.length/2)));
+  var step = glyph?0.085:0.115, dur=step*0.92, t0=actx.currentTime+0.02;
+  var rr=mulberry32(hashStr(g.id+text+Math.floor(now()/700)));
+  var sc=vo.scale, idx=Math.floor(rr()*sc.length), oct=1;
+  for(var i=0;i<n;i++){
+    idx += (rr()<0.5?1:-1)*(1+(rr()<0.28?1:0));
+    if(idx<0){ idx+=sc.length-1; oct=Math.max(0.5,oct/2); }
+    if(idx>sc.length-1){ idx-=sc.length-1; oct=Math.min(2,oct*2); }
+    var f=vo.base*sc[idx]*oct;
+    if(glyph) f*=(0.82+rr()*0.55);
+    voiceBlip(f, t0+i*step, dur, glyph?vo.type2:vo.type, glyph?0.10:0.13);
+  }
+}
+function purr(v){
+  if(save.muted || !ensureAudio()) return;
+  var vo=vivVoice(v.g), t0=actx.currentTime+0.02, base=vo.base*0.5;
+  for(var i=0;i<6;i++){ voiceBlip(base*(i%2?1.03:1), t0+i*0.055, 0.05, "triangle", 0.07); }
+}
+
+/* ---------- temperament (genome-derived, reused by the field card later) ---------- */
+var TEMPERS=["curious","shy","playful","calm","bold","dreamy"];
+function temperamentOf(g){ return TEMPERS[(g.seed>>>3)%TEMPERS.length]; }
 
 /* ---------- language ---------- */
 /* Each Viv invents its own small, consistent language. As your bond grows you
@@ -671,34 +814,34 @@ function utter(v){
     /* pure glyph babble */
     var len=3+Math.floor(r()*4), gl="";
     for(var j=0;j<len;j++) gl+=pick(r,GLYPHS);
-    return {text:gl, glyph:true};
+    return {text:gl, glyph:true, con:con};
   }
   if(artic<26){
     /* glyphs threaded with its own sound for this feeling */
     var ln=2+Math.floor(r()*2), pre="";
     for(var k=0;k<ln;k++) pre+=pick(r,GLYPHS);
-    return {text:pre+" "+lex[con], glyph:true};
+    return {text:pre+" "+lex[con], glyph:true, con:con};
   }
   if(artic<44){
     /* fluent in its own invented language */
     var out=[lex[con]];
     if(r()<0.6) out.unshift(lex[pick(r,CONCEPTS)]);
     if(r()<0.4) out.push(lex[pick(r,CONCEPTS)]);
-    return {text:out.join(" "), glyph:false};
+    return {text:out.join(" "), glyph:false, con:con};
   }
   if(artic<64){
     /* you begin to understand: its word, then the meaning */
-    return {text:lex[con]+" ("+(REAL[con]||con).split(" ")[0]+")", glyph:false};
+    return {text:lex[con]+" ("+(REAL[con]||con).split(" ")[0]+")", glyph:false, con:con};
   }
   if(artic<82){
     /* broken real speech */
     var phr=(REAL[con]||"hello").split(" ");
     if(phr.length>2) phr=phr.slice(0,2);
     if(r()<0.5) phr.push("...");
-    return {text:phr.join(" "), glyph:false};
+    return {text:phr.join(" "), glyph:false, con:con};
   }
   /* fluent and warm */
-  return {text:WARM[con]||REAL[con]||"hello", glyph:false};
+  return {text:WARM[con]||REAL[con]||"hello", glyph:false, con:con};
 }
 
 function langTierOf(bond){ return bond<12?0:bond<26?1:bond<44?2:bond<64?3:bond<82?4:5; }
@@ -713,7 +856,14 @@ function checkLang(v){
       v.g.name+" is speaking in real words now.",
       v.g.name+" speaks with you, clear and warm."];
     if(m[t]) toast(m[t]);
+    triggerMoment("word", v);
   }
+}
+function learnConcept(v, con){
+  if(!con) return false;
+  if(!Array.isArray(v.s.learned)) v.s.learned=[];
+  if(v.s.bond>=44 && CONCEPTS.indexOf(con)>=0 && v.s.learned.indexOf(con)<0){ v.s.learned.push(con); return true; }
+  return false;
 }
 
 /* ---------- rendering ---------- */
@@ -722,6 +872,8 @@ cx.imageSmoothingEnabled=false;
 var W=256,H=224,vivScale=1;
 var bands={airTop:8, landY:118, waterY:158};
 var anim=0, lastFrame=0, sprites={}; /* per viv runtime motion */
+var ptr={x:-999, y:-999, active:false, t:0};
+function ptrLive(){ return ptr.active && (now()-ptr.t)<2500; }
 
 function fitCanvas(){
   var wrapEl=cv.parentElement, cw=wrapEl.clientWidth, ch=wrapEl.clientHeight;
@@ -738,11 +890,250 @@ function fitCanvas(){
 }
 window.addEventListener("resize",fitCanvas);
 
+/* ---------- glass tank depth: sunbeam, dust, caustics, bubbles, glass ---------- */
+function drawSunbeam(night, wk){
+  if(night) return;
+  if(wk && wk!=="clear" && wk!=="cloud") return;
+  var strength=(wk==="cloud")?0.05:0.13, bx=W*0.18;
+  var g=cx.createLinearGradient(bx,0,bx+90,bands.waterY);
+  g.addColorStop(0,"rgba(255,246,210,"+strength+")"); g.addColorStop(1,"rgba(255,246,210,0)");
+  cx.fillStyle=g;
+  cx.beginPath(); cx.moveTo(bx-26,0); cx.lineTo(bx+58,0); cx.lineTo(bx+150,bands.waterY); cx.lineTo(bx+18,bands.waterY); cx.closePath(); cx.fill();
+}
+function drawDust(night){
+  var base=night?0.16:0.34;
+  for(var i=0;i<24;i++){
+    var sd=i*131;
+    var x=(((sd*0.7)+anim*4+Math.sin(anim*0.5+i)*8)%W+W)%W;
+    var y=((sd*0.43)+anim*3)%(bands.waterY-6);
+    var inBeam=(!night && x>W*0.10 && x<W*0.34);
+    cx.fillStyle="rgba(255,250,225,"+(inBeam?0.5:base*0.4)+")";
+    cx.fillRect(x|0,y|0,1,1);
+  }
+}
+function drawCaustics(night){
+  var top=bands.waterY, h=H-top, a=night?0.05:0.12;
+  cx.fillStyle="rgba(180,235,255,"+a+")";
+  for(var x=0;x<W;x+=6){
+    var ph=anim*1.5+x*0.12, yy=top+3+(Math.sin(ph)*0.5+0.5)*(h-6), w=2+Math.sin(ph*1.3)*1.5;
+    cx.fillRect(x, yy|0, Math.max(1,w|0), 1);
+  }
+}
+function drawBubbles(){
+  var top=bands.waterY, span=H-top-4;
+  for(var i=0;i<10;i++){
+    var sd=i*89, x=(sd*0.37)%W, y=H-4-(((anim*12+sd)%span)), r=1+(i%3);
+    cx.fillStyle="rgba(210,240,252,0.12)"; cx.fillRect(x|0,y|0,r,r);
+    cx.fillStyle="rgba(255,255,255,0.10)"; cx.fillRect(x|0,y|0,1,1);
+  }
+}
+function drawGlass(wk){
+  /* edge vignette for a sense of depth inside the tank */
+  var vg=cx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.34,W/2,H/2,Math.max(W,H)*0.62);
+  vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,0.22)");
+  cx.fillStyle=vg; cx.fillRect(0,0,W,H);
+  /* slanted glare on the glass */
+  cx.save(); cx.globalCompositeOperation="lighter";
+  var g1=cx.createLinearGradient(0,0,40,0);
+  g1.addColorStop(0,"rgba(255,255,255,0)"); g1.addColorStop(0.5,"rgba(255,255,255,0.09)"); g1.addColorStop(1,"rgba(255,255,255,0)");
+  cx.fillStyle=g1; cx.translate(W*0.6,0); cx.rotate(0.32); cx.fillRect(0,-24,40,H*1.7);
+  cx.restore();
+  cx.save(); cx.globalCompositeOperation="lighter";
+  cx.fillStyle="rgba(255,255,255,0.045)"; cx.translate(W*0.18,0); cx.rotate(0.32); cx.fillRect(0,-24,7,H*1.7);
+  cx.restore();
+  /* condensation, heavier in wet weather */
+  var dropN=(wk==="rain"||wk==="fog"||wk==="storm")?32:15;
+  for(var i=0;i<dropN;i++){
+    var sd=i*167, x=(sd*0.53)%W, y=(sd*0.31)%bands.landY, rr=(i%4===0)?2:1;
+    cx.fillStyle="rgba(210,235,248,0.12)"; cx.fillRect(x|0,y|0,rr,rr);
+    cx.fillStyle="rgba(255,255,255,0.12)"; cx.fillRect(x|0,y|0,1,1);
+  }
+}
+
+/* ---------- habitat props (a personal assemblage) ---------- */
+var PROP_DEFS={
+  lamp:{band:"land", label:"Lamp"},
+  radio:{band:"land", label:"Radio"},
+  fern:{band:"land", label:"Fern"},
+  rock:{band:"land", label:"Rock"},
+  shell:{band:"water", label:"Shell"},
+  coral:{band:"water", label:"Coral"}
+};
+function propBaseY(def){ return def.band==="water" ? (H-6) : bands.landY; }
+/* shared pixel-art painter: art = [ [fillStyle, [[x,y,w,h],...]], ... ] */
+function paintArt(art){ if(!art) return; for(var i=0;i<art.length;i++){ cx.fillStyle=art[i][0]; var rs=art[i][1]; for(var j=0;j<rs.length;j++){ var r=rs[j]; cx.fillRect(r[0],r[1],r[2],r[3]); } } }
+var PROP_ART={
+  lamp:[["#3a342b",[[-1,-14,2,14]]],["#241f18",[[-4,-1,8,2]]],["#bfa24a",[[-4,-20,8,5]]],["#fff1b0",[[-2,-16,4,2]]]],
+  radio:[["#5a4632",[[-7,-9,14,9]]],["#2c2218",[[-7,-9,14,1]]],["#cdbb88",[[-5,-7,6,5]]],["#1a1410",[[-5,-6,6,1],[-5,-4,6,1],[-5,-2,6,1]]],["#d8c87a",[[2,-7,3,3]]],["#9a8a5a",[[5,-13,1,5]]]],
+  fern:[["#2f6b39",[[-2,-10,1,10],[-1,-9,1,9],[0,-8,1,8],[1,-9,1,9],[2,-10,1,10]]],["#3f8a4a",[[-3,-7,1,3],[3,-7,1,3]]]],
+  rock:[["#5b5b63",[[-6,-5,12,5],[-4,-7,8,2]]],["#75757d",[[-3,-6,3,2]]]],
+  shell:[["#caa6b8",[[-4,-4,8,4],[-3,-6,6,2]]],["#e6c8d6",[[-1,-5,2,4]]]],
+  coral:[["#c8704a",[[-1,-8,2,8],[-4,-5,2,5],[3,-6,2,6]]]]
+};
+function drawProp(prop){
+  var def=PROP_DEFS[prop.type]; if(!def) return;
+  var x=Math.round(clamp((prop.fx||0.5)*W,10,W-10)), y=propBaseY(def);
+  cx.save(); cx.translate(x,y); cx.scale(vivScale,vivScale); paintArt(PROP_ART[prop.type]); cx.restore();
+  if(prop.type==="lamp"){
+    var nightL=(WX.on&&WX.code!=null)? !WX.isDay : isNight();
+    if(nightL){ var gg=cx.createRadialGradient(x,y-16*vivScale,2,x,y-16*vivScale,40*vivScale); gg.addColorStop(0,"rgba(255,236,150,0.28)"); gg.addColorStop(1,"rgba(255,236,150,0)"); cx.fillStyle=gg; cx.fillRect(x-44*vivScale,y-42*vivScale,88*vivScale,48*vivScale); }
+  }
+  if(prop.type==="radio"){
+    for(var nN=0;nN<2;nN++){ var t=(anim*0.5+nN*0.5)%1; var nx=x+6*vivScale+Math.sin((t+nN)*6)*4; var ny=y-12*vivScale-t*22*vivScale; cx.globalAlpha=0.6*(1-t); cx.fillStyle="#e6e1c8"; cx.fillRect(nx|0,ny|0,2,2); cx.fillRect((nx+2)|0,(ny-2)|0,1,3); }
+    cx.globalAlpha=1;
+  }
+}
+function drawProps(band){ for(var i=0;i<save.props.length;i++){ var p=save.props[i]; if((PROP_DEFS[p.type]||{}).band===band) drawProp(p); } }
+function vivPropReaction(slot, sp){
+  if(slot.s.egg || slot.s.asleep || !save.props.length) return;
+  var reach = slot.g.loco==="water"?"water":(slot.g.loco==="land"?"land":null);
+  if(!reach) return;
+  for(var i=0;i<save.props.length;i++){ var p=save.props[i], def=PROP_DEFS[p.type]; if(!def||def.band!==reach) continue;
+    if(Math.abs(sp.x-clamp((p.fx||0.5)*W,10,W-10))<16){
+      var ix=sp.x+5*vivScale, iy=sp.y-18*vivScale, a=0.55+0.45*Math.sin(anim*4);
+      cx.save(); cx.translate(ix,iy); cx.scale(vivScale,vivScale); cx.globalAlpha=a;
+      if(p.type==="radio"){ cx.fillStyle="#e9e3c8"; cx.fillRect(0,-4,2,5); cx.fillRect(1,-5,3,2); cx.fillRect(-1,0,2,2); }
+      else if(p.type==="lamp"){ cx.fillStyle="#ffe89a"; cx.fillRect(-1,-1,3,3); cx.fillRect(0,-3,1,1); cx.fillRect(0,3,1,1); cx.fillRect(-3,0,1,1); cx.fillRect(3,0,1,1); }
+      else { cx.fillStyle="#ff8aa0"; cx.fillRect(-2,-2,2,2); cx.fillRect(1,-2,2,2); cx.fillRect(-2,0,5,2); cx.fillRect(-1,2,3,1); cx.fillRect(0,3,1,1); }
+      cx.restore(); cx.globalAlpha=1; return;
+    }
+  }
+}
+
+/* ---------- curios (found objects the Viv leaves behind) ---------- */
+var CURIO_DEFS={
+  shell:{label:"a spiral shell"}, leaf:{label:"a pressed leaf"}, film:{label:"a strip of film"},
+  cap:{label:"a bottle cap"}, pebble:{label:"a smooth pebble"}, feather:{label:"a small feather"},
+  key:{label:"a tiny brass key"}, marble:{label:"a glass marble"}
+};
+var CURIO_KEYS=["shell","leaf","film","cap","pebble","feather","key","marble"];
+var CURIO_ART={
+  shell:[["#d7b9a0",[[-3,-3,6,5]]],["#b8917a",[[-1,-2,1,3],[1,-2,1,3]]]],
+  leaf:[["#6f8f3f",[[-2,-3,4,6]]],["#4f6f2a",[[0,-3,1,6]]]],
+  film:[["#2a2a2e",[[-3,-4,6,8]]],["#d8d4c8",[[-3,-3,1,1],[2,-3,1,1],[-3,-1,1,1],[2,-1,1,1],[-3,1,1,1],[2,1,1,1],[-3,3,1,1],[2,3,1,1]]]],
+  cap:[["#9a3b3b",[[-3,-2,6,4]]],["#c85a5a",[[-2,-1,4,1]]]],
+  pebble:[["#8a8a92",[[-3,-2,6,4]]],["#a6a6ae",[[-2,-2,2,1]]]],
+  feather:[["#cfd6df",[[-1,-4,2,8]]],["#aeb6c0",[[-2,-2,1,3],[1,-1,1,3]]]],
+  key:[["#caa84a",[[-3,-1,6,2],[-3,-2,2,4]]],["#e0c060",[[2,0,1,2]]]],
+  marble:[["#6fa8c8",[[-3,-3,6,6]]],["#bfe0ee",[[-2,-2,2,2]]]]
+};
+function drawCurioIcon(type,x,y,s){ cx.save(); cx.translate(x,y); cx.scale(s,s); paintArt(CURIO_ART[type]); cx.restore(); }
+function drawTankCurios(){
+  for(var i=0;i<save.tankCurios.length;i++){
+    var c=save.tankCurios[i], x=Math.round(clamp((c.fx||0.5)*W,10,W-10)), y=bands.landY+10;
+    drawCurioIcon(c.type,x,y,vivScale);
+    var tw=0.4+0.6*Math.sin(anim*5+i);
+    cx.fillStyle="rgba(255,250,210,"+tw+")"; cx.fillRect(x+((3*vivScale)|0), y-((6*vivScale)|0),1,1);
+  }
+}
+function spawnCurio(){ if(save.tankCurios.length>=3) return; save.tankCurios.push({type:CURIO_KEYS[Math.floor(Math.random()*CURIO_KEYS.length)], fx:0.12+Math.random()*0.76, id:uid()}); }
+function collectCurio(idx){
+  var cu=save.tankCurios[idx]; if(!cu) return;
+  save.tankCurios.splice(idx,1);
+  save.curios.push({type:cu.type, at:now()}); if(save.curios.length>80) save.curios.shift();
+  var v=activeViv(); if(v) v.s.happy=clamp(v.s.happy+2,0,100);
+  sfx("good"); toast("You found "+((CURIO_DEFS[cu.type]||{}).label||"a curio")+".");
+  writeSave();
+}
+
+/* ---------- habitat and curio panels ---------- */
+function propBtn(t){ return '<button class="btn" id="addp_'+t+'" style="flex:1 0 44%">+ '+PROP_DEFS[t].label+'</button>'; }
+function addProp(t){ if(save.props.length>=8){ toast("The tank is full of decor."); return; } save.props.push({type:t, fx:0.1+Math.random()*0.8, id:uid()}); writeSave(); }
+function openHabitat(){
+  var body='<p>Arrange your vivarium. Place a few things and your Vivs will notice them.</p>'+
+    '<div class="row" style="flex-wrap:wrap">'+propBtn("lamp")+propBtn("radio")+propBtn("fern")+propBtn("rock")+propBtn("shell")+propBtn("coral")+'</div>'+
+    '<p style="color:var(--crt-dim)">'+save.props.length+' of 8 placed.</p>'+
+    '<div class="row"><button class="btn" id="hClear">Clear all decor</button></div>';
+  openPanel("HABITAT", body, function(){
+    for(var k in PROP_DEFS){ (function(t){ var b=document.getElementById("addp_"+t); if(b) b.onclick=function(){ addProp(t); openHabitat(); }; })(k); }
+    document.getElementById("hClear").onclick=function(){ save.props=[]; writeSave(); openHabitat(); };
+  });
+}
+function openCurios(){
+  var items=save.curios.slice().reverse(), grid;
+  if(!items.length) grid='<p style="color:var(--crt-dim)">No curios yet. Your Vivs leave little finds in the tank. Tap one to keep it here.</p>';
+  else {
+    grid='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0">';
+    for(var i=0;i<items.length;i++){ var c=items[i]; grid+='<div style="text-align:center"><canvas class="curioC" width="40" height="40" data-t="'+c.type+'" style="width:100%;image-rendering:pixelated;background:#0c0b10;border:1px solid #2a2620;border-radius:3px"></canvas><div style="font-size:9px;color:var(--crt-dim);margin-top:2px">'+escapeHtml(((CURIO_DEFS[c.type]||{label:"curio"}).label).replace(/^a /,""))+'</div></div>'; }
+    grid+='</div>';
+  }
+  openPanel("CURIO CABINET", '<p>'+save.curios.length+' kept.</p>'+grid, function(){
+    var cs=document.querySelectorAll(".curioC");
+    for(var j=0;j<cs.length;j++){ var cc=cs[j], pc=cc.getContext("2d"); pc.imageSmoothingEnabled=false; var oldcx=cx; cx=pc; cx.clearRect(0,0,40,40); drawCurioIcon(cc.getAttribute("data-t"),20,22,3.4); cx=oldcx; }
+  });
+}
+
+/* ---------- cinematic moments ---------- */
+var moment=null;
+function hexA(hex,a){ var h=(hex||"#ffffff").replace('#',''); if(h.length===3) h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; var c=hexToRgb('#'+h); return "rgba("+c[0]+","+c[1]+","+c[2]+","+a+")"; }
+function aOrAn(w){ return /^[aeiou]/i.test(w)?"an":"a"; }
+function momentWordSub(v){ var L=v.s.langTier||0; return L>=5?"speaks with you, warm and clear":L>=4?"its first real words":L>=3?"you begin to understand it":L>=2?"its own little language":"its first sounds"; }
+function triggerMoment(kind, v){
+  if(!v) return;
+  moment={kind:kind, t0:now(), dur:(kind==="hatch"?2600:2200)};
+  var tt = kind==="hatch" ? [v.g.name.toUpperCase()+" HATCHED","a new Viv enters the world"]
+         : kind==="evolve"? [v.g.name.toUpperCase()+" GREW","now "+aOrAn(stageOf(v))+" "+stageOf(v)]
+         :                   [v.g.name.toUpperCase()+" SPOKE", momentWordSub(v)];
+  var mEl=document.getElementById("moment"), mt=document.getElementById("momentT"), ms=document.getElementById("momentS");
+  if(mt) mt.textContent=tt[0]; if(ms) ms.textContent=tt[1];
+  if(mEl){ mEl.classList.add("on"); setTimeout(function(){ mEl.classList.remove("on"); }, moment.dur-450); }
+  if(kind==="hatch"){ sfx("good"); speakVoice(v,"ba ba",true); }
+  else if(kind==="evolve"){ sfx("call"); speakVoice(v,"wo aa ee",true); }
+  else { sfx("good"); speakVoice(v, utter(v).text, (v.s.langTier||0)<2); }
+  if(typeof navigator!=="undefined" && navigator.vibrate){ try{ navigator.vibrate(kind==="hatch"?[12,40,24]:24); }catch(e){} }
+}
+function drawMoment(){
+  if(!moment) return;
+  var e=(now()-moment.t0)/moment.dur; if(e>=1){ moment=null; return; }
+  var v=activeViv(), sp=v?spriteFor(v.slot):null, cxp=sp?sp.x:W/2, cyp=sp?sp.y:H/2;
+  var col=(v&&v.g.palette)?v.g.palette.accent:"#ffe6a0", belly=(v&&v.g.palette)?v.g.palette.belly:"#ffffff";
+  var fa = e<0.18 ? (e/0.18) : Math.max(0,1-(e-0.18)/0.55);
+  cx.save(); cx.globalCompositeOperation="lighter";
+  if(fa>0){ var rg=cx.createRadialGradient(cxp,cyp,2,cxp,cyp,100*vivScale); rg.addColorStop(0,hexA(col,0.55*fa)); rg.addColorStop(1,hexA(col,0)); cx.fillStyle=rg; cx.fillRect(0,0,W,H); }
+  for(var i=0;i<16;i++){ var ang=i/16*6.283+e*1.4, rad=e*78*vivScale*(0.55+(i%3)*0.18); var sx=cxp+Math.cos(ang)*rad, sy=cyp+Math.sin(ang)*rad-e*12; var sa=Math.max(0,1-e)*0.9; cx.fillStyle=hexA((i%2?col:belly),sa); cx.fillRect(sx|0,sy|0,2,2); }
+  cx.restore();
+}
+
+/* ---------- rare events: moon phase, fireflies, shooting star, wild Viv ---------- */
+function moonPhase(d){ var lp=2551442.8, ref=947182440; var t=d.getTime()/1000; var p=((t-ref)%lp)/lp; return p<0?p+1:p; }
+function drawMoon(night,wk){
+  if(!night || wk==="rain"||wk==="storm"||wk==="fog") return;
+  var ph=moonPhase(new Date()), R=8, mx=Math.round(W*0.82), my=Math.round(bands.landY*0.32), cosT=Math.cos(ph*6.283);
+  for(var py=-R;py<=R;py++){ var halfw=Math.sqrt(Math.max(0,R*R-py*py)), lim=cosT*halfw;
+    for(var px=-R;px<=R;px++){ if(px*px+py*py>R*R) continue; var lit=(ph<=0.5)?(px>=lim):(px<=-lim);
+      cx.fillStyle=lit?"rgba(240,242,222,0.95)":"rgba(70,80,100,0.16)"; cx.fillRect(mx+px,my+py,1,1); } }
+}
+function drawFireflies(night,wk){
+  if(!night || (wk && wk!=="clear" && wk!=="cloud")) return;
+  var span=Math.max(8,(bands.landY*0.3)|0);
+  for(var i=0;i<7;i++){ var sd=i*97;
+    var x=(((sd*0.6)+Math.sin(anim*0.7+i)*30+anim*6)%W+W)%W;
+    var y=bands.landY*0.42+Math.sin(anim*1.1+i*2)*(bands.landY*0.26)+(sd%span);
+    var glow=0.35+0.65*Math.abs(Math.sin(anim*2+i));
+    cx.fillStyle="rgba(205,255,130,"+glow+")"; cx.fillRect(x|0,y|0,1,1);
+    cx.fillStyle="rgba(205,255,130,"+(glow*0.22)+")"; cx.fillRect((x-1)|0,y|0,3,1); cx.fillRect(x|0,(y-1)|0,1,3);
+  }
+}
+var star=null;
+function maybeSpawnStar(night,wk){ if(star||!night||(wk&&wk!=="clear"&&wk!=="cloud")) return; if(Math.random()<0.0011){ star={x:W*(0.08+Math.random()*0.5), y:bands.landY*(0.08+Math.random()*0.22), vx:46+Math.random()*36, vy:22+Math.random()*14, t0:now(), life:1.7}; } }
+function drawStar(dt){ if(!star) return; var e=(now()-star.t0)/1000; if(e>star.life){ star=null; return; } star.x+=star.vx*dt; star.y+=star.vy*dt; var a=Math.max(0,1-e/star.life);
+  cx.save(); cx.globalCompositeOperation="lighter"; for(var k=0;k<6;k++){ var tx=star.x-star.vx*0.012*k, ty=star.y-star.vy*0.012*k; cx.fillStyle="rgba(255,250,220,"+(a*(1-k/6))+")"; cx.fillRect(tx|0,ty|0,2,2); } cx.restore(); }
+function wishOnStar(){ star=null; var v=activeViv(); if(v){ v.s.happy=clamp(v.s.happy+4,0,100); v.s.bond=clamp(v.s.bond+1,0,100); writeSave(); } sfx("good"); if(typeof navigator!=="undefined"&&navigator.vibrate){try{navigator.vibrate(18);}catch(e){}} toast("You made a wish."); }
+var wild=null;
+function maybeSpawnWild(night){ if(wild) return; if(Math.random()<0.0006){ var locos=["air","land","water"], lo=locos[Math.floor(Math.random()*3)]; var g=makeGenome("wild"+Math.floor(Math.random()*1e6), lo); var dir=Math.random()<0.5?1:-1; var by=baseYFor(lo); wild={slot:{g:g, s:freshState()}, sp:{x:dir>0?-20:W+20, y:by, baseY:by, dir:dir, ph:Math.random()*6.28, tx:0, hop:0}, dropped:false}; } }
+function updateWild(dt){ if(!wild) return; var sp=wild.sp, lo=wild.slot.g.loco; sp.ph+=dt; sp.x+=sp.dir*16*dt;
+  if(lo==="air") sp.y=sp.baseY+Math.sin(sp.ph*1.6)*10; else if(lo==="water") sp.y=sp.baseY+Math.sin(sp.ph*2.2)*5;
+  if(!wild.dropped && Math.random()<0.004 && save.tankCurios.length<3){ wild.dropped=true; spawnCurio(); }
+  if((sp.dir>0 && sp.x>W+24)||(sp.dir<0 && sp.x<-24)) wild=null;
+}
+
+function baseYFor(loco){ return loco==="air"?52 : loco==="water"?(Math.round((bands.waterY+H)/2)-2) : (bands.landY+2); }
 function spriteFor(slot){
+
   var id=slot.g.id;
   if(!sprites[id]){
     var loco=slot.g.loco;
-    var y= loco==="air"?52 : loco==="water"?(Math.round((bands.waterY+H)/2)-2) : (bands.landY+2);
+    var y= baseYFor(loco);
     sprites[id]={x:60+Math.random()*120, y:y, baseY:y, tx:60+Math.random()*120, dir:1, hop:0, ph:Math.random()*6.28};
   }
   return sprites[id];
@@ -761,6 +1152,8 @@ function drawScene(ts){
   cx.fillStyle=grad; cx.fillRect(0,0,W,bands.landY);
   /* stars on clear nights */
   if(night && (wk===null||wk==="clear")){cx.fillStyle="#d8e6ff";for(var s=0;s<18;s++){var sx=(s*53+13)%W, sy=(s*29+7)%(bands.landY-20);cx.globalAlpha=0.5+0.5*Math.sin(anim*2+s);cx.fillRect(sx,sy,1,1);}cx.globalAlpha=1;}
+  drawMoon(night,wk);
+  drawSunbeam(night,wk);
   /* clouds drift in the sky behind the Vivs */
   drawClouds(wk);
   /* soil band */
@@ -775,6 +1168,8 @@ function drawScene(ts){
   cx.fillStyle=wg; cx.fillRect(0,bands.waterY,W,H-bands.waterY);
   cx.fillStyle="rgba(255,255,255,.12)";
   for(var wv=0;wv<W;wv+=8){var yy=bands.waterY+2+Math.sin(anim*2+wv*0.3)*1.5;cx.fillRect(wv,yy,4,1);}
+  drawCaustics(night); drawBubbles(); drawDust(night);
+  drawProps("land"); drawProps("water"); drawTankCurios();
 
   /* poops belong to the active viv, drawn on the soil */
   var av=activeViv();
@@ -791,9 +1186,15 @@ function drawScene(ts){
     var sp=spriteFor(slot);
     updateMotion(slot, sp, dt);
     if(slot.s.egg) drawEgg(slot, sp);
-    else drawViv(slot, sp, k===save.active, vivScale);
+    else { drawViv(slot, sp, k===save.active, vivScale); vivPropReaction(slot, sp); }
   }
+  maybeSpawnWild(night); updateWild(dt);
+  if(wild) drawViv(wild.slot, wild.sp, false, vivScale*0.85);
+  drawFireflies(night,wk);
+  maybeSpawnStar(night,wk); drawStar(dt);
   drawWeatherFront(wk, dt);
+  drawGlass(wk);
+  drawMoment();
   requestAnimationFrame(drawScene);
 }
 
@@ -801,6 +1202,7 @@ function updateMotion(slot, sp, dt){
   if(slot.s.egg){ sp.y=sp.baseY+Math.sin(anim*3)*1.2; return; }
   var loco=slot.g.loco, asleep=slot.s.asleep;
   sp.ph+=dt;
+  if(sp.petT>0){ sp.petT-=dt; sp.petPh=(sp.petPh||0)+dt*22; }
   if(asleep){ sp.y=sp.baseY+Math.sin(anim*1.5)*1; return; }
   /* wander horizontally */
   if(Math.abs(sp.x-sp.tx)<3){ sp.tx=24+Math.random()*(W-48); }
@@ -843,6 +1245,7 @@ function drawViv(slot, sp, isActive, escale){
   cx.translate(x,y);
   cx.scale(escale,escale);
   if(dir<0) cx.scale(-1,1);
+  if(sp.petT>0) cx.rotate(Math.sin(sp.petPh||0)*0.13*(sp.petT/0.7));
   cx.globalAlpha = sick?0.82:1;
 
   /* shadow on the ground for land vivs */
@@ -901,6 +1304,13 @@ function drawViv(slot, sp, isActive, escale){
   /* eyes */
   var ex=[], n=ge.eyes;
   if(n===1) ex=[0]; else if(n===2) ex=[-4,4]; else ex=[-6,0,6];
+  var lookx=0.8, looky=0;
+  if(ptrLive() && !sleep){
+    var dl=Math.hypot(ptr.x-x, ptr.y-(y-bh/2))||1;
+    lookx=clamp((dir>0?1:-1)*(ptr.x-x)/dl*1.6, -1.6, 1.6);
+    looky=clamp((ptr.y-(y-bh/2))/dl*1.2, -1.0, 1.2);
+    if(temperamentOf(g)==="shy") lookx*=-0.5;
+  }
   for(var e=0;e<ex.length;e++){
     var eo=ex[e], ey=-bh/6;
     cx.fillStyle=pal.eye;
@@ -909,7 +1319,7 @@ function drawViv(slot, sp, isActive, escale){
     else { cx.fillRect(eo-2,ey,5,3); }
     cx.fillStyle=pal.pupil;
     if(sleep){ cx.fillRect(eo-2,ey+1,5,1); }
-    else { var px=eo + (dir>0?1:0); cx.fillRect(px-1,ey-1+(ge.eyeShape===1?2:0),2,2); }
+    else { cx.fillRect(Math.round(eo+lookx)-1, Math.round(ey-1+looky+(ge.eyeShape===1?2:0)),2,2); }
   }
   /* mouth mood */
   cx.fillStyle=pal.line;
@@ -1038,7 +1448,7 @@ var actions={
     }
     after(v);
   },
-  talk:function(v){ var u=utter(v); speechEl.innerHTML=u.glyph?'<span class="glyph">'+escapeHtml(u.text)+'</span>':escapeHtml(u.text); v.s.bond=clamp(v.s.bond+0.5,0,100); bump(v,"talk"); checkLang(v); sfx("bubble"); writeSave(); },
+  talk:function(v){ var u=utter(v); speechEl.innerHTML=u.glyph?'<span class="glyph">'+escapeHtml(u.text)+'</span>':escapeHtml(u.text); v.s.bond=clamp(v.s.bond+0.5,0,100); bump(v,"talk"); checkLang(v); learnConcept(v,u.con); speakVoice(v,u.text,u.glyph); writeSave(); },
   art:function(v){ openArt(v); },
   more:function(){ openMenu(); }
 };
@@ -1115,11 +1525,6 @@ function lyapOf(type,a,b,c,d){
     else { xe=e[0]; ye=e[1]; }
   }
   return sum/(n||1);
-}
-function boundsOf(type,a,b,c,d){
-  var x=0.1,y=0.1,mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
-  for(var i=0;i<3500;i++){ var p=attrStep(type,a,b,c,d,x,y); x=p[0]; y=p[1]; if(i<30) continue; if(x<mnx)mnx=x; if(x>mxx)mxx=x; if(y<mny)mny=y; if(y>mxy)mxy=y; }
-  return [mnx,mxx,mny,mxy];
 }
 function probeOf(type,a,b,c,d){
   var x=0.1,y=0.1, N=4200, X=[], Y=[], m=0;
@@ -1306,9 +1711,15 @@ function openMenu(){
       '<button class="btn" id="mHatch"><span class="ic">&#129370;</span>Hatch into empty slot</button>'+
       (v&&!v.slot.egg?'<button class="btn" id="mRename"><span class="ic">&#9998;</span>Rename '+escapeHtml(v.g.name)+'</button>':'')+
       (v?'<button class="btn" id="mExport"><span class="ic">&#11015;</span>Export '+escapeHtml(v.g.name)+' (trade)</button>':'')+
+      (v&&!v.slot.egg?'<button class="btn" id="mCard"><span class="ic">&#128209;</span>Field card</button>':'')+
       (v&&!v.slot.egg?'<button class="btn" id="mBloom"><span class="ic">&#127912;</span>View the bloom</button>':'')+
       '<button class="btn" id="mImport"><span class="ic">&#11014;</span>Import a Viv</button>'+
+      '<button class="btn" id="mExportAll"><span class="ic">&#128190;</span>Back up whole vivarium</button>'+
+      '<button class="btn" id="mRestore"><span class="ic">&#128229;</span>Restore from a backup</button>'+
       (v?'<button class="btn" id="mFree"><span class="ic">&#127807;</span>Set '+escapeHtml(v.g.name)+' free</button>':'')+
+      '<button class="btn" id="mHabitat"><span class="ic">&#127793;</span>Habitat and decor</button>'+
+      '<button class="btn" id="mCurios"><span class="ic">&#128188;</span>Curio cabinet</button>'+
+      '<button class="btn" id="mDiary"><span class="ic">&#128221;</span>Field notes</button>'+
       '<button class="btn" id="mAbout"><span class="ic">&#8505;</span>About</button>'+
     '</div><div class="closeline"><button class="chip" id="mClose">CLOSE</button></div>'+
     '<input type="file" id="fileIn" accept="application/json,.json" class="hidden">';
@@ -1316,9 +1727,15 @@ function openMenu(){
   bind("mHatch",function(){ var empty=save.slots.indexOf(null); if(empty<0){toast("All three slots are full. Set one free first.");return;} save.active=empty; openHatch(); });
   bind("mRename",function(){ openRename(v); });
   bind("mExport",function(){ exportViv(v); });
+  bind("mCard",function(){ openCard(v); });
   bind("mBloom",function(){ openArt(v); });
   bind("mImport",function(){ document.getElementById("fileIn").click(); });
+  bind("mExportAll",function(){ exportVivarium(); });
+  bind("mRestore",function(){ document.getElementById("fileIn").click(); });
   bind("mFree",function(){ openFree(v); });
+  bind("mHabitat",function(){ openHabitat(); });
+  bind("mCurios",function(){ openCurios(); });
+  bind("mDiary",function(){ openDiary(); });
   bind("mAbout",function(){ openAbout(); });
   document.getElementById("mClose").onclick=closeScrim;
   document.getElementById("fileIn").onchange=function(e){ importFile(e.target.files[0]); };
@@ -1337,13 +1754,12 @@ function openFree(v){
   document.getElementById("frNo").onclick=closeScrim;
 }
 function openAbout(){
-  panel.innerHTML='<h2>ABOUT VIVARIUM</h2><p>A pocket habitat for raising Vivs. Feed them, play, keep them clean and rested, and they will slowly learn to speak with you. Vivs never die. Neglect only makes them sad or sick, and care always brings them back.</p><p>Tap WX to let your Vivs feel your real local weather. Their sky changes with yours, and they will mention it as they learn to talk.</p><p style="color:var(--crt-dim)">Trade Vivs with friends by exporting a card and importing theirs. MBPARKS ARCADE. GPL-3.0.</p><div class="closeline"><button class="chip" id="abClose">CLOSE</button></div>';
-  document.getElementById("abClose").onclick=closeScrim;
+  openPanel("ABOUT VIVARIUM", '<p>A pocket habitat for raising Vivs. Feed them, play, keep them clean and rested, and they will slowly learn to speak with you. Vivs never die. Neglect only makes them sad or sick, and care always brings them back.</p><p>Tap WX to let your Vivs feel your real local weather. Their sky changes with yours, and they will mention it as they learn to talk.</p><p style="color:var(--crt-dim)">Trade Vivs with friends by exporting a card and importing theirs. MBPARKS ARCADE. GPL-3.0.</p><p style="color:var(--crt-dim);font-size:11px">VIVARIUM '+APP_VERSION+' . build '+APP_BUILD+'</p>');
 }
 
 /* ---------- trade: export and import json ---------- */
 function exportViv(v){
-  var card={ vivarium:1, kind:"viv-card", g:v.g, s:v.s };
+  var card={ vivarium:1, kind:"viv-card", version:APP_VERSION, build:APP_BUILD, g:v.g, s:v.s };
   var blob=new Blob([JSON.stringify(card,null,2)],{type:"application/json"});
   var url=URL.createObjectURL(blob), a=document.createElement("a");
   a.href=url; a.download=("viv-"+v.g.name+".json").replace(/[^a-z0-9.\-]/gi,"_");
@@ -1351,20 +1767,60 @@ function exportViv(v){
   setTimeout(function(){URL.revokeObjectURL(url);},1500);
   closeScrim(); toast("Exported "+v.g.name+". Send the file to a friend.");
 }
+function exportVivarium(){
+  var backup={ vivarium:1, kind:"vivarium-backup", app:"VIVARIUM", version:APP_VERSION, build:APP_BUILD, schema:SCHEMA, exportedAt:Date.now(), save:save };
+  var blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+  var url=URL.createObjectURL(blob), a=document.createElement("a");
+  var d=new Date(), pad=function(n){return (n<10?"0":"")+n;};
+  a.href=url; a.download="vivarium-backup-"+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+".json";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},1500);
+  closeScrim(); toast("Vivarium exported. Keep the file to restore on another device.");
+}
+function importVivCard(card){
+  var empty=save.slots.indexOf(null);
+  if(empty<0){ toast("All slots full. Set one free to take in a new Viv."); return; }
+  card.g.id=uid(); /* fresh local id so it can coexist with the original */
+  var slot={g:card.g, s:card.s||freshState()}; slot.s.lastTick=now(); slot.s.calling=false;
+  save.slots[empty]=slot; save.active=empty; writeSave(); closeScrim();
+  sfx("good"); toast(card.g.name+" moves in. Say hello."); refresh();
+}
+function confirmRestore(restored, meta){
+  var curN=save.slots.filter(function(s){return s;}).length;
+  var newN=(restored.slots||[]).filter(function(s){return s;}).length;
+  var stamp="";
+  if(meta){
+    var when = meta.exportedAt ? new Date(meta.exportedAt).toLocaleDateString() : (meta.build||"");
+    var ver = meta.version ? ("VIVARIUM "+meta.version) : "VIVARIUM";
+    stamp='<p style="color:var(--crt-dim);font-size:11px">From '+escapeHtml(ver)+(when?(", made "+escapeHtml(when)):"")+'.</p>';
+  }
+  var body=stamp+
+    '<p>This replaces everything in your vivarium ('+curN+' Viv'+(curN===1?'':'s')+') with the saved one ('+newN+' Viv'+(newN===1?'':'s')+'), including decor, curios, and field notes.</p>'+
+    '<p style="color:var(--crt-dim)">Your current vivarium cannot be recovered after this.</p>'+
+    '<div class="row"><button class="btn" id="rsGo">Replace everything</button><button class="btn" id="rsNo">Cancel</button></div>';
+  openPanel("RESTORE BACKUP", body, function(){
+    document.getElementById("rsGo").onclick=function(){ applyBackup(restored); };
+    document.getElementById("rsNo").onclick=closeScrim;
+  });
+}
+function applyBackup(restored){
+  save=restored;
+  migrateSave();
+  var t=now();
+  for(var i=0;i<3;i++){ var sl=save.slots[i]; if(sl && sl.s){ sl.s.lastTick=t; sl.s.calling=false; } }
+  sprites={}; _voiceCache={}; _lexCache={}; save.pendingAway=null;
+  writeSave(); closeScrim(); fitCanvas(); refresh();
+  sfx("good"); toast("Vivarium restored.");
+}
 function importFile(file){
   if(!file) return;
   var r=new FileReader();
   r.onload=function(){
-    try{
-      var card=JSON.parse(r.result);
-      if(!card||card.kind!=="viv-card"||!card.g){ toast("That file is not a Viv card."); return; }
-      var empty=save.slots.indexOf(null);
-      if(empty<0){ toast("All slots full. Set one free to take in a new Viv."); return; }
-      card.g.id=uid(); /* fresh local id so it can coexist with the original */
-      var slot={g:card.g, s:card.s||freshState()}; slot.s.lastTick=now(); slot.s.calling=false;
-      save.slots[empty]=slot; save.active=empty; writeSave(); closeScrim();
-      sfx("good"); toast(card.g.name+" moves in. Say hello."); refresh();
-    }catch(e){ toast("Could not read that file."); }
+    var data;
+    try{ data=JSON.parse(r.result); }catch(e){ toast("Could not read that file."); return; }
+    if(data && data.kind==="vivarium-backup" && data.save){ confirmRestore(data.save, data); return; }
+    if(data && data.kind==="viv-card" && data.g){ importVivCard(data); return; }
+    toast("That file is not a Viv card or a vivarium backup.");
   };
   r.readAsText(file);
 }
@@ -1372,6 +1828,12 @@ function importFile(file){
 /* ---------- scrim + toast ---------- */
 function showScrim(){ scrim.classList.add("show"); }
 function closeScrim(){ scrim.classList.remove("show"); panel.innerHTML=""; }
+function openPanel(title, body, after){
+  panel.innerHTML='<h2>'+title+'</h2>'+body+'<div class="closeline"><button class="chip" id="panelClose">CLOSE</button></div>';
+  showScrim();
+  document.getElementById("panelClose").onclick=closeScrim;
+  if(after) after();
+}
 scrim.addEventListener("click",function(e){ if(e.target===scrim) closeScrim(); });
 document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeScrim(); });
 
@@ -1383,11 +1845,42 @@ function toast(msg){
   clearTimeout(toastT); toastT=setTimeout(function(){ t.style.opacity="0"; t.style.transition="opacity .4s"; },2200);
 }
 
-/* ---------- tank interaction (hatch egg on tap) ---------- */
-cv.addEventListener("click",function(e){
-  var v=activeViv(); if(!v) return;
-  if(v.slot.egg){ v.slot.egg=false; v.s.lastTick=now(); delete sprites[v.g.id]; sfx("good"); toast(v.g.name+" hatched."); after(v); }
-});
+/* ---------- tank interaction: pet a Viv, hatch an egg, track the pointer ---------- */
+function tankPoint(e){
+  var rect=cv.getBoundingClientRect(); if(rect.width<1||rect.height<1) return null;
+  var p=(e.touches&&e.touches[0])?e.touches[0]:e;
+  ptr.x=(p.clientX-rect.left)/rect.width*W;
+  ptr.y=(p.clientY-rect.top)/rect.height*H;
+  ptr.active=true; ptr.t=now();
+  return ptr;
+}
+function petViv(slot, sp){
+  var v=wrap(slot), t=now();
+  sp.petT=0.7; sp.petPh=0;
+  if(!sp.lastPet || t-sp.lastPet>1100){
+    slot.s.happy=clamp(slot.s.happy+1.5,0,100);
+    slot.s.bond=clamp(slot.s.bond+0.25,0,100);
+    sp.lastPet=t; checkLang(v); writeSave();
+  }
+  purr(v);
+  if(typeof navigator!=="undefined" && navigator.vibrate){ try{ navigator.vibrate(10); }catch(e){} }
+}
+function tankTap(px,py){
+  if(star){ var se=(now()-star.t0)/1000; if(se<star.life && Math.hypot(px-star.x,py-star.y)<28){ wishOnStar(); return; } }
+  for(var c=0;c<save.tankCurios.length;c++){ var cu=save.tankCurios[c]; if(Math.hypot(px-clamp((cu.fx||0.5)*W,10,W-10), py-(bands.landY+10))<18){ collectCurio(c); return; } }
+  for(var k=0;k<3;k++){
+    var slot=save.slots[k]; if(!slot) continue; var sp=spriteFor(slot);
+    if(slot.s.egg){
+      if(Math.hypot(px-sp.x,py-sp.y)<28){ slot.s.egg=false; slot.s.lastTick=now(); delete sprites[slot.g.id]; save.active=k; refresh(); triggerMoment("hatch", wrap(slot)); writeSave(); return; }
+    }
+  }
+  var best=null,bestSlot=null,bestD=1e9;
+  for(var j=0;j<3;j++){ var s2=save.slots[j]; if(!s2||s2.s.egg) continue; var p2=spriteFor(s2); var d=Math.hypot(px-p2.x,py-p2.y); if(d<bestD){ bestD=d; best=p2; bestSlot=s2; } }
+  if(best && bestD<44){ petViv(bestSlot, best); }
+}
+cv.addEventListener("pointermove", function(e){ tankPoint(e); });
+cv.addEventListener("pointerleave", function(){ ptr.active=false; });
+cv.addEventListener("pointerdown", function(e){ ensureAudio(); var p=tankPoint(e); if(p) tankTap(p.x, p.y); });
 
 /* ---------- top buttons ---------- */
 document.getElementById("muteBtn").onclick=function(){
@@ -1399,7 +1892,9 @@ document.getElementById("wxBtn").onclick=wxToggle;
 /* ---------- boot ---------- */
 function boot(){
   loadSave();
+  var awayGap=computeGap(), curBefore=save.tankCurios.length;
   catchUp();
+  maybeAwayLog(awayGap, save.tankCurios.length-curBefore);
   document.getElementById("muteBtn").textContent=save.muted?"SND OFF":"SND ON";
   wxLoad(); wxUpdateChip();
   if(WX.on && WX.lat!=null && WX.lon!=null) wxFetch();
@@ -1412,15 +1907,17 @@ function boot(){
   /* steady tick every 4s for live decay while open */
   setInterval(function(){
     var t=now();
-    for(var i=0;i<3;i++){ var slot=save.slots[i]; if(!slot) continue; var dt=(t-(slot.s.lastTick||t))/1000; if(dt>0) tickViv(slot,dt); slot.s.lastTick=t; }
+    for(var i=0;i<3;i++){ var slot=save.slots[i]; if(!slot) continue; var dt=(t-(slot.s.lastTick||t))/1000; if(dt>0) tickViv(slot,dt); slot.s.lastTick=t;
+      if(!slot.s.egg){ var st2=stageOf(slot); if(slot.s.stage && slot.s.stage!==st2 && save.slots[save.active]===slot) triggerMoment("evolve", wrap(slot)); slot.s.stage=st2; } }
     if(activeViv() && activeViv().s.calling) { /* gentle nudge */ }
     writeSave(); refresh();
   },4000);
   /* speech refresh */
-  setInterval(function(){ var v=activeViv(); if(v && !v.slot.egg){ var u=utter(v); speechEl.innerHTML=u.glyph?'<span class="glyph">'+escapeHtml(u.text)+'</span>':escapeHtml(u.text);} },5000);
+  setInterval(function(){ var v=activeViv(); if(v && !v.slot.egg){ var u=utter(v); speechEl.innerHTML=u.glyph?'<span class="glyph">'+escapeHtml(u.text)+'</span>':escapeHtml(u.text); if(learnConcept(v,u.con)) writeSave(); } },5000);
 
   var anyViv=save.slots.some(function(s){return s;});
   if(!anyViv){ openHatch(); }
+  else if(save.pendingAway){ var txt=save.pendingAway; save.pendingAway=null; writeSave(); setTimeout(function(){ showAway(txt); }, 900); }
 }
 window.addEventListener("load",function(){ setTimeout(fitCanvas,30); });
 boot();
