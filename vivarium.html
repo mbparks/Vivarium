@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<!--
+  VIVARIUM
+  A pocket vivarium for raising Vivs.
+  Part of the MBPARKS ARCADE. Green Shoe Studio.
+
+  Copyright (C) 2026 Michael B. Parks
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version. See https://www.gnu.org/licenses/.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#15130f">
+<title>VIVARIUM</title>
+<style>
+  :root{
+    /* Instrument console, not a webpage. Dark graphite, warm brass, ivory labels, sickly CRT green. */
+    --case:#1a1714;
+    --case-hi:#262019;
+    --case-lo:#0f0d0b;
+    --bezel:#0a0907;
+    --brass:#c2933f;
+    --brass-hi:#e7c277;
+    --ivory:#e9e2d0;
+    --label:#9a8f78;
+    --crt:#9fe6a6;
+    --crt-dim:#4f7a55;
+    --warn:#d8694b;
+    --ok:#86c06a;
+    --btn:#2a231b;
+    --btn-hi:#3a3024;
+    --btn-edge:#080706;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:
+      radial-gradient(120% 90% at 50% 0%, #221d17 0%, #12100d 60%, #0b0a08 100%);
+    color:var(--ivory);
+    font-family:"Courier New",ui-monospace,monospace;
+    -webkit-font-smoothing:none;
+    overflow:hidden;
+    touch-action:manipulation;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  #app{
+    height:100%;
+    height:100dvh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    gap:0;
+  }
+  .console{
+    width:100%;
+    max-width:none;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    background:linear-gradient(180deg,var(--case-hi),var(--case) 30%,var(--case-lo));
+  }
+  /* tank and top bar go full width; controls stay comfortably centered */
+  .tabs, .readout, .controls{max-width:600px;margin-left:auto;margin-right:auto}
+
+  /* Nameplate */
+  .plate{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:8px 12px 7px;
+    background:linear-gradient(180deg,#211b14,#171310);
+    border-bottom:2px solid var(--btn-edge);
+  }
+  .plate .name{
+    font-weight:bold;letter-spacing:5px;font-size:15px;
+    color:var(--brass-hi);
+    text-shadow:0 1px 0 #000, 0 0 8px rgba(231,194,119,.18);
+  }
+  .plate .sub{font-size:9px;letter-spacing:2px;color:var(--label);margin-top:1px}
+  .plate .tools{display:flex;gap:6px}
+  .chip{
+    appearance:none;border:1px solid var(--btn-edge);background:var(--btn);
+    color:var(--label);font-family:inherit;font-size:10px;letter-spacing:1px;
+    padding:5px 8px;border-radius:3px;cursor:pointer;
+    box-shadow:inset 0 1px 0 #3a3024;
+  }
+  .chip:hover{background:var(--btn-hi);color:var(--ivory)}
+  .chip:focus-visible{outline:2px solid var(--brass);outline-offset:1px}
+
+  /* The glass tank */
+  .tankwrap{
+    position:relative;
+    flex:1 1 auto;
+    min-height:0;
+    margin:8px 0 6px;
+    border-top:3px solid #0a0908;
+    border-bottom:3px solid #0a0908;
+    background:#05121a;
+    box-shadow:inset 0 0 30px rgba(0,0,0,.6);
+    overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #tank{
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    display:block;
+  }
+  /* glass glare */
+  .glare{
+    position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(115deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,0) 22%, rgba(255,255,255,0) 78%, rgba(255,255,255,.04) 100%);
+    mix-blend-mode:screen;
+  }
+  .calltag{
+    position:absolute;top:6px;left:50%;transform:translateX(-50%);
+    font-size:10px;letter-spacing:2px;color:#0b0a08;background:var(--brass-hi);
+    padding:2px 7px;border-radius:2px;display:none;
+    animation:blink 1s steps(2) infinite;
+  }
+  @keyframes blink{50%{opacity:.25}}
+
+  /* Selector tabs */
+  .tabs{display:flex;gap:6px;padding:0 10px 6px;justify-content:center}
+  .tab{
+    flex:1;max-width:130px;
+    appearance:none;border:1px solid var(--btn-edge);
+    background:var(--btn);color:var(--label);
+    font-family:inherit;font-size:10px;letter-spacing:1px;
+    padding:7px 4px;border-radius:3px;cursor:pointer;text-align:center;
+    box-shadow:inset 0 1px 0 #34291f;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  }
+  .tab .n{color:var(--ivory);font-size:11px}
+  .tab.active{border-color:var(--brass);color:var(--brass-hi);background:#2f2619}
+  .tab.active .n{color:var(--brass-hi)}
+  .tab.empty{color:var(--crt-dim);font-style:normal}
+  .tab:focus-visible{outline:2px solid var(--brass);outline-offset:1px}
+
+  /* CRT readout */
+  .readout{
+    margin:0 auto 8px;
+    background:#07140c;
+    border:2px solid #0a0908;
+    border-radius:4px;
+    box-shadow:inset 0 0 14px rgba(0,0,0,.7), inset 0 0 0 1px #103019;
+    padding:8px 10px 9px;
+  }
+  .speech{
+    color:var(--crt);min-height:18px;font-size:13px;letter-spacing:1px;
+    text-shadow:0 0 6px rgba(159,230,166,.4);
+    word-break:break-word;
+  }
+  .speech .glyph{font-family:"Courier New",monospace}
+  .meta{display:flex;justify-content:space-between;color:var(--crt-dim);font-size:9px;letter-spacing:1px;margin-top:5px}
+  .gauges{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px}
+  .gauge{display:flex;flex-direction:column;gap:3px}
+  .gauge .lab{font-size:8px;letter-spacing:1px;color:var(--crt-dim);text-align:center}
+  .bar{height:8px;background:#0c1f12;border:1px solid #103019;border-radius:1px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--crt);width:50%}
+  .bar.lo i{background:var(--warn)}
+
+  /* Controls */
+  .controls{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:6px;
+    padding:0 10px 12px;
+  }
+  .btn{
+    appearance:none;border:1px solid var(--btn-edge);
+    background:linear-gradient(180deg,var(--btn-hi),var(--btn));
+    color:var(--ivory);font-family:inherit;font-size:10px;letter-spacing:1px;
+    padding:11px 4px 9px;border-radius:4px;cursor:pointer;
+    box-shadow:inset 0 1px 0 #463a2b, 0 2px 0 var(--btn-edge);
+    display:flex;flex-direction:column;align-items:center;gap:4px;
+    transition:transform .04s;
+  }
+  .btn:active{transform:translateY(2px);box-shadow:inset 0 1px 0 #463a2b,0 0 0 var(--btn-edge)}
+  .btn:hover{background:linear-gradient(180deg,#473a2b,#2f271d)}
+  .btn:focus-visible{outline:2px solid var(--brass);outline-offset:1px}
+  .btn .ic{font-size:16px;line-height:1}
+  .btn[disabled]{opacity:.4;cursor:not-allowed}
+
+  /* Modal */
+  .scrim{
+    position:absolute;inset:0;background:rgba(5,4,3,.78);
+    display:none;align-items:center;justify-content:center;padding:18px;z-index:40;
+  }
+  .scrim.show{display:flex}
+  .panel{
+    width:100%;max-width:340px;background:linear-gradient(180deg,var(--case-hi),var(--case));
+    border:2px solid var(--btn-edge);border-radius:6px;padding:16px;
+    box-shadow:0 8px 30px rgba(0,0,0,.6), inset 0 1px 0 #3a3024;
+  }
+  .panel h2{margin:0 0 4px;font-size:13px;letter-spacing:2px;color:var(--brass-hi)}
+  .panel p{margin:0 0 12px;font-size:11px;line-height:1.5;color:var(--label)}
+  .panel .row{display:flex;gap:8px;flex-wrap:wrap}
+  .panel .row .btn{flex:1;min-width:90px}
+  .panel input[type=text]{
+    width:100%;background:#0c0a08;border:1px solid #000;color:var(--ivory);
+    font-family:inherit;font-size:13px;padding:8px;border-radius:3px;margin-bottom:12px;
+  }
+  .panel input:focus-visible{outline:2px solid var(--brass)}
+  .closeline{display:flex;justify-content:flex-end;margin-top:6px}
+
+  /* Guess game */
+  .guess{display:flex;gap:14px;justify-content:center;margin:6px 0 4px}
+  .guess .hand{
+    width:90px;height:74px;border:2px solid var(--btn-edge);border-radius:6px;
+    background:linear-gradient(180deg,var(--btn-hi),var(--btn));
+    display:flex;align-items:center;justify-content:center;font-size:30px;cursor:pointer;
+    box-shadow:inset 0 1px 0 #463a2b;
+  }
+  .guess .hand:hover{background:#473a2b}
+  .guess .hand:focus-visible{outline:2px solid var(--brass)}
+
+  .hidden{display:none !important}
+
+  @media (max-width:380px){
+    .btn{font-size:9px;padding:9px 2px 8px}
+    .btn .ic{font-size:15px}
+    .plate .name{font-size:13px;letter-spacing:4px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .calltag{animation:none}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="console">
+    <div class="plate">
+      <div>
+        <div class="name">VIVARIUM</div>
+        <div class="sub">POCKET HABITAT</div>
+      </div>
+      <div class="tools">
+        <button class="chip" id="muteBtn" aria-label="Toggle sound">SND ON</button>
+        <button class="chip" id="wxBtn" aria-label="Toggle weather">WX OFF</button>
+        <button class="chip" id="menuBtn" aria-label="Open menu">MENU</button>
+      </div>
+    </div>
+
+    <div class="tankwrap">
+      <canvas id="tank" width="256" height="224"></canvas>
+      <div class="glare"></div>
+      <div class="calltag" id="callTag">! WANTS YOU !</div>
+    </div>
+
+    <div class="tabs" id="tabs"></div>
+
+    <div class="readout">
+      <div class="speech" id="speech">&hellip;</div>
+      <div class="meta"><span id="metaName">NO VIV</span><span id="metaStage"></span></div>
+      <div class="gauges" id="gauges"></div>
+    </div>
+
+    <div class="controls" id="controls">
+      <button class="btn" data-act="feed"><span class="ic">&#127860;</span>Feed</button>
+      <button class="btn" data-act="play"><span class="ic">&#127922;</span>Play</button>
+      <button class="btn" data-act="clean"><span class="ic">&#129529;</span>Clean</button>
+      <button class="btn" data-act="meds"><span class="ic">&#128138;</span>Medicine</button>
+      <button class="btn" data-act="lights"><span class="ic">&#128161;</span>Lights</button>
+      <button class="btn" data-act="scold"><span class="ic">&#128528;</span>Scold</button>
+      <button class="btn" data-act="talk"><span class="ic">&#128172;</span>Talk</button>
+      <button class="btn" data-act="art"><span class="ic">&#127912;</span>Art</button>
+    </div>
+  </div>
+
+  <div class="scrim" id="scrim">
+    <div class="panel" id="panel"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+(function(){
+
+/* ---------- small utilities ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function hashStr(s){var h=2166136261>>>0;for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function clamp(v,a,b){return v<a?a:v>b?b:v;}
+function pick(rng,arr){return arr[Math.floor(rng()*arr.length)];}
+function now(){return Date.now();}
+function uid(){return Math.floor(Math.random()*1e9).toString(36)+now().toString(36);}
+
+function hslToHex(h,s,l){
+  h=(h%360+360)%360;s=clamp(s,0,100)/100;l=clamp(l,0,100)/100;
+  var c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2, r=0,g=0,b=0;
+  if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}else if(h<180){g=c;b=x;}
+  else if(h<240){g=x;b=c;}else if(h<300){r=x;b=c;}else{r=c;b=x;}
+  function tw(n){var v=Math.round((n+m)*255);return ("0"+v.toString(16)).slice(-2);}
+  return "#"+tw(r)+tw(g)+tw(b);
+}
+
+/* ---------- genome and palette ---------- */
+var LOCOS=["water","land","air"];
+var NAMES=["Pip","Moss","Tonka","Bramble","Cinder","Wisp","Juno","Fenn","Clove","Bun","Mica","Sprout","Pim","Dewey","Tally","Ode","Bisk","Nim","Fig","Wren"];
+
+function makePalette(rng){
+  var hue=Math.floor(rng()*360);
+  var sat=42+Math.floor(rng()*28);
+  var lit=52+Math.floor(rng()*12);
+  var accHue=(hue + (rng()<0.5? 150+Math.floor(rng()*60) : 25+Math.floor(rng()*30)))%360;
+  return {
+    base:  hslToHex(hue,sat,lit),
+    shade: hslToHex(hue,sat+6,lit-20),
+    belly: hslToHex(hue,sat-22,lit+20),
+    accent:hslToHex(accHue,sat+12,lit+4),
+    eye:   "#f3efe0",
+    pupil: "#1a1620",
+    line:  hslToHex(hue,Math.min(70,sat+10),16)
+  };
+}
+
+function makeGenome(seedStr, loco){
+  var seed=hashStr(seedStr||uid());
+  var rng=mulberry32(seed);
+  var pal=makePalette(rng);
+  return {
+    v:1,
+    id:uid(),
+    name:pick(rng,NAMES),
+    loco:loco||pick(rng,LOCOS),
+    seed:seed,
+    genes:{
+      body:Math.floor(rng()*4),     /* round, tall, wide, segmented */
+      eyes:1+Math.floor(rng()*3),   /* 1 to 3 eyes */
+      eyeShape:Math.floor(rng()*3), /* round, oval, sleepy */
+      pattern:Math.floor(rng()*4),  /* none, spots, stripes, belly */
+      crest:Math.floor(rng()*4),    /* none, antennae, horns, fin-crest */
+      limbs:Math.floor(rng()*3)     /* style variant within loco */
+    },
+    palette:pal,
+    born:now()
+  };
+}
+
+function freshState(){
+  return {
+    fullness:78, happy:72, energy:80, health:100, weight:50,
+    discipline:50, bond:6,
+    asleep:false, lightsOn:true, sick:false, doses:0,
+    calling:false, callKind:null, callSince:0,
+    poops:[], lastTick:now(), log:[], langTier:0,
+    tally:{meal:0,snack:0,playWin:0,playLose:0,clean:0,meds:0,scoldGood:0,scoldBad:0,talk:0}
+  };
+}
+
+/* ---------- interaction tallies and color helpers ---------- */
+function tallyOf(s){var t=(s&&s.tally)||{};return {meal:t.meal||0,snack:t.snack||0,playWin:t.playWin||0,playLose:t.playLose||0,clean:t.clean||0,meds:t.meds||0,scoldGood:t.scoldGood||0,scoldBad:t.scoldBad||0,talk:t.talk||0};}
+function bump(v,k){ if(!v.s.tally) v.s.tally={}; v.s.tally[k]=(v.s.tally[k]||0)+1; }
+function hexToRgb(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+function lerpN(a,b,t){return a+(b-a)*t;}
+function rampColor(stops,t){var n=stops.length-1,f=clamp(t,0,1)*n,i=Math.floor(f),fr=f-i,a=stops[i],b=stops[Math.min(n,i+1)];return [lerpN(a[0],b[0],fr),lerpN(a[1],b[1],fr),lerpN(a[2],b[2],fr)];}
+
+/* ---------- the save (up to 3 slots) ---------- */
+var SAVE_KEY="vivarium_save_v1";
+var save={slots:[null,null,null], active:0, muted:false};
+var mem=null; /* in-memory fallback when storage is blocked */
+
+function loadSave(){
+  try{
+    var raw=localStorage.getItem(SAVE_KEY);
+    if(raw){save=JSON.parse(raw);}
+  }catch(e){ if(mem){save=mem;} }
+  if(!save.slots){save.slots=[null,null,null];}
+  while(save.slots.length<3) save.slots.push(null);
+  if(typeof save.active!=="number") save.active=0;
+}
+function writeSave(){
+  mem=save;
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }catch(e){}
+}
+
+/* ---------- viv helpers ---------- */
+function ageDays(v){return (now()-v.g.born)/86400000;}
+function stageOf(v){
+  if(v.s.egg) return "egg";
+  var d=ageDays(v);
+  if(d<0.5) return "hatchling";
+  if(d<3) return "juvenile";
+  if(d<10) return "adult";
+  return "elder";
+}
+function stageScale(st){
+  return st==="egg"?1:st==="hatchling"?0.62:st==="juvenile"?0.8:st==="adult"?1:1.06;
+}
+function activeViv(){
+  var slot=save.slots[save.active];
+  return slot?wrap(slot):null;
+}
+/* a viv slot stores {g:genome, s:state, egg?:bool}. wrap gives convenience refs. */
+function wrap(slot){return {g:slot.g, s:slot.s, slot:slot};}
+
+/* ---------- offline catch up and ticking ---------- */
+function tickViv(slot, dtSec){
+  var s=slot.s;
+  if(slot.s.egg) return;
+  var mins=dtSec/60;
+  /* fullness falls, faster when awake */
+  var fr=s.asleep?0.18:0.5;
+  s.fullness=clamp(s.fullness - fr*mins, 0, 100);
+  /* energy: recovers asleep with lights off, drains awake */
+  if(s.asleep && !s.lightsOn) s.energy=clamp(s.energy + 0.9*mins,0,100);
+  else s.energy=clamp(s.energy - 0.25*mins,0,100);
+  /* poop: small chance per minute while awake and fed */
+  if(!s.asleep && s.fullness>15){
+    var pk=1-Math.pow(1-0.06, Math.min(mins,240));
+    if(Math.random()<pk && s.poops.length<6){
+      s.poops.push({x:30+Math.floor(Math.random()*196), id:uid()});
+    }
+  }
+  /* cleanliness drives sickness */
+  var dirty=s.poops.length;
+  if(dirty>=3 && !s.sick){
+    var sk=1-Math.pow(1-0.02*(dirty-2), Math.min(mins,240));
+    if(Math.random()<sk){ s.sick=true; s.doses=1+(Math.random()<0.4?1:0); }
+  }
+  if(s.fullness<8 && !s.sick && Math.random()<(1-Math.pow(0.985,Math.min(mins,240)))){
+    s.sick=true; s.doses=1;
+  }
+  /* health drifts down when sick, never below floor; recovers otherwise */
+  if(s.sick) s.health=clamp(s.health - 0.4*mins, 12, 100);
+  else s.health=clamp(s.health + 0.2*mins, 0, 100);
+  /* happiness target from conditions */
+  var target=70;
+  if(s.fullness<25) target-=25;
+  if(s.weight>78) target-=10;
+  if(dirty>=2) target-=12;
+  if(s.sick) target-=25;
+  if(s.energy<20) target-=12;
+  if(s.lightsOn && isNight()) target-=14;
+  if(WX.on && WX.code!=null){
+    if(WX.kind==="clear" && WX.isDay) target+=5;
+    else if(WX.kind==="storm") target-=5;
+  }
+  target=clamp(target,4,92);
+  var rate=0.6*mins;
+  s.happy=clamp(s.happy + clamp(target-s.happy,-rate,rate), 0, 100);
+  /* weight slowly normalizes toward 50 */
+  s.weight=clamp(s.weight + clamp(50-s.weight,-0.2*mins,0.2*mins),20,100);
+  /* attention call: occasional, hidden naughty vs real need */
+  if(!s.asleep && !s.calling){
+    var ck=1-Math.pow(1-0.03, Math.min(mins,240));
+    if(Math.random()<ck){
+      s.calling=true; s.callSince=now();
+      var realNeed = s.fullness<35 || dirty>=2 || s.happy<40 || s.energy<25;
+      var naughtyChance = clamp(0.55 - (s.discipline-50)/140, 0.1, 0.85);
+      s.callKind = (realNeed && Math.random()>naughtyChance) ? "need" : "naughty";
+    }
+  }
+  /* sleep state from clock and lights */
+  if(isNight() && !s.lightsOn) s.asleep=true;
+  else if(!isNight()) s.asleep=false;
+}
+
+function isNight(){var h=new Date().getHours();return h>=21 || h<6;}
+
+/* ---------- weather (Open-Meteo, no key; the tank reacts to your real sky) ---------- */
+var WX={on:false, code:null, temp:null, isDay:1, wind:0, kind:null, at:0, lat:null, lon:null, status:"off", flash:0, nextFlash:5};
+function wxLoad(){ try{ var raw=localStorage.getItem("vivarium_wx_v1"); if(raw){ var d=JSON.parse(raw); WX.on=!!d.on; WX.lat=(typeof d.lat==="number")?d.lat:null; WX.lon=(typeof d.lon==="number")?d.lon:null; } }catch(e){} }
+function wxSave(){ try{ localStorage.setItem("vivarium_wx_v1", JSON.stringify({on:WX.on,lat:WX.lat,lon:WX.lon})); }catch(e){} }
+function wxKind(code){
+  if(code===0) return "clear";
+  if(code>=1&&code<=3) return "cloud";
+  if(code===45||code===48) return "fog";
+  if((code>=51&&code<=67)||(code>=80&&code<=82)) return "rain";
+  if((code>=71&&code<=77)||code===85||code===86) return "snow";
+  if(code>=95) return "storm";
+  return "clear";
+}
+function wxChipText(){
+  if(!WX.on) return "WX OFF";
+  if(WX.status==="loading") return "WX \u2026";
+  if(WX.status==="error") return "WX --";
+  if(WX.code==null) return "WX";
+  var lbl={clear:WX.isDay?"CLEAR":"CLEAR NT",cloud:"CLOUDY",fog:"FOG",rain:"RAIN",snow:"SNOW",storm:"STORM"}[WX.kind]||"";
+  var t=(WX.temp!=null)?Math.round(WX.temp)+"\u00B0":"";
+  return lbl+(t?" "+t:"");
+}
+function wxUpdateChip(){ var b=document.getElementById("wxBtn"); if(b) b.textContent=wxChipText(); }
+function wxApply(j){
+  var c=j&&j.current;
+  if(!c||typeof c.weather_code!=="number"){ WX.status="error"; wxUpdateChip(); return; }
+  WX.code=c.weather_code; WX.temp=c.temperature_2m; WX.isDay=(c.is_day===0?0:1); WX.wind=c.wind_speed_10m||0;
+  WX.kind=wxKind(WX.code); WX.at=now(); WX.status="ok"; wxUpdateChip();
+}
+function wxFetch(){
+  if(WX.lat==null||WX.lon==null||typeof fetch!=="function") return;
+  WX.status="loading"; wxUpdateChip();
+  var url="https://api.open-meteo.com/v1/forecast?latitude="+WX.lat.toFixed(3)+"&longitude="+WX.lon.toFixed(3)+"&current=temperature_2m,weather_code,is_day,wind_speed_10m";
+  fetch(url).then(function(r){return r.json();}).then(wxApply).catch(function(){ WX.status="error"; wxUpdateChip(); });
+}
+function wxEnable(){
+  WX.on=true; wxSave(); wxUpdateChip();
+  if(WX.lat!=null&&WX.lon!=null){ wxFetch(); return; }
+  if(typeof navigator==="undefined"||!navigator.geolocation){ WX.status="error"; wxUpdateChip(); toast("Location is not available here."); return; }
+  WX.status="loading"; wxUpdateChip();
+  navigator.geolocation.getCurrentPosition(function(pos){
+    WX.lat=pos.coords.latitude; WX.lon=pos.coords.longitude; wxSave(); wxFetch();
+  }, function(){ WX.status="error"; wxUpdateChip(); toast("Could not get your location for weather."); }, {timeout:9000, maximumAge:600000});
+}
+function wxDisable(){ WX.on=false; WX.status="off"; wxSave(); wxUpdateChip(); }
+function wxToggle(){ if(WX.on) wxDisable(); else wxEnable(); }
+function wxConcept(){
+  if(!WX.on||WX.code==null) return null;
+  if(WX.temp!=null&&WX.temp<=1) return "cold";
+  if(WX.temp!=null&&WX.temp>=30) return "hot";
+  if(WX.wind>=38) return "wind";
+  var k=WX.kind;
+  if(k==="clear") return WX.isDay?"sun":null;
+  if(k==="cloud") return "cloud";
+  if(k==="fog") return "fog";
+  if(k==="rain") return "rain";
+  if(k==="snow") return "snow";
+  if(k==="storm") return "storm";
+  return null;
+}
+function skyColors(night, wk){
+  if(night){
+    if(wk==="storm"||wk==="rain") return ["#0a121c","#0a1620"];
+    if(wk==="snow") return ["#101826","#141d28"];
+    if(wk==="fog") return ["#141a20","#161b20"];
+    if(wk==="cloud") return ["#0c1822","#0e1c24"];
+    return ["#0a1626","#0c1a22"];
+  }
+  if(wk==="storm") return ["#2b3340","#3a4350"];
+  if(wk==="rain") return ["#34505f","#4a6470"];
+  if(wk==="snow") return ["#5b6f80","#8aa0ad"];
+  if(wk==="fog") return ["#5a6670","#7d8890"];
+  if(wk==="cloud") return ["#3f6276","#6f93a0"];
+  return ["#21506e","#3c7f8f"];
+}
+function drawClouds(wk){
+  if(wk!=="cloud"&&wk!=="rain"&&wk!=="storm"&&wk!=="snow"&&wk!=="fog") return;
+  var dark=(wk==="storm"), base=dark?"#2c343d":"#828d96", n=(wk==="fog")?2:3;
+  for(var i=0;i<n;i++){
+    var cw=34+i*12, speed=5+i*3, x=((anim*speed+i*140)%(W+cw))-cw, y=8+i*15;
+    cx.globalAlpha=(wk==="fog")?0.28:0.5;
+    cx.fillStyle=base;
+    cx.fillRect(x,y,cw,9); cx.fillRect(x+6,y-4,cw-12,6); cx.fillRect(x+4,y+8,cw-8,4);
+  }
+  cx.globalAlpha=1;
+}
+function drawRain(heavy){
+  cx.fillStyle="rgba(185,210,230,0.55)";
+  var N=heavy?80:50, speed=heavy?300:200;
+  for(var i=0;i<N;i++){ var sd=i*97; var x=((sd*13)%W+anim*30)%W; var y=(((sd*7)%(H+20))+anim*speed)%(H+20)-10; cx.fillRect(x|0,y|0,1,5); }
+}
+function drawSnow(){
+  cx.fillStyle="rgba(235,242,250,0.9)";
+  for(var i=0;i<55;i++){ var sd=i*53; var y=(((sd*9)%(H+10))+anim*22)%(H+10)-5; var x=((((sd*17)%W)+Math.sin(anim*1.1+sd)*4)+W)%W; cx.fillRect(x|0,y|0,2,2); }
+}
+function drawFog(){
+  cx.fillStyle="rgba(205,210,215,0.22)"; cx.fillRect(0,0,W,H);
+  cx.fillStyle="rgba(215,220,225,0.12)";
+  for(var i=0;i<4;i++){ var y=(((i*38+anim*5+Math.sin(anim*0.3+i)*6)%H)+H)%H; cx.fillRect(0,y,W,12); }
+}
+function drawWeatherFront(wk, dt){
+  if(!wk) return;
+  if(wk==="rain"){ drawRain(false); }
+  else if(wk==="storm"){
+    drawRain(true);
+    WX.nextFlash-=dt; if(WX.nextFlash<=0){ WX.flash=0.55; WX.nextFlash=4+Math.random()*8; }
+    WX.flash=Math.max(0,WX.flash-dt*1.6);
+    if(WX.flash>0){ cx.fillStyle="rgba(255,255,255,"+(WX.flash*0.5).toFixed(3)+")"; cx.fillRect(0,0,W,H); }
+  }
+  else if(wk==="snow"){ drawSnow(); }
+  else if(wk==="fog"){ drawFog(); }
+}
+
+
+function catchUp(){
+  var t=now();
+  for(var i=0;i<3;i++){
+    var slot=save.slots[i];
+    if(!slot) continue;
+    var dt=Math.max(0,(t-(slot.s.lastTick||t))/1000);
+    /* cap offline at 3 days of decay so neglect is recoverable, never fatal */
+    dt=Math.min(dt, 3*86400);
+    if(dt>1) tickViv(slot, dt);
+    slot.s.lastTick=t;
+  }
+}
+
+/* ---------- audio (tiny square blips, user gesture only) ---------- */
+var actx=null;
+function beep(freq,dur,type){
+  if(save.muted) return;
+  try{
+    if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+    var o=actx.createOscillator(), g=actx.createGain();
+    o.type=type||"square"; o.frequency.value=freq;
+    g.gain.setValueAtTime(0.0001,actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.18,actx.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+dur);
+    o.connect(g);g.connect(actx.destination);
+    o.start();o.stop(actx.currentTime+dur+0.02);
+  }catch(e){}
+}
+function sfx(name){
+  if(name==="good"){beep(660,0.08);setTimeout(function(){beep(880,0.1);},70);}
+  else if(name==="bad"){beep(180,0.16,"sawtooth");}
+  else if(name==="eat"){beep(440,0.06);setTimeout(function(){beep(520,0.06);},60);}
+  else if(name==="bubble"){beep(720,0.05,"sine");}
+  else if(name==="call"){beep(990,0.07);setTimeout(function(){beep(990,0.07);},120);}
+  else beep(500,0.06);
+}
+
+/* ---------- language ---------- */
+/* Each Viv invents its own small, consistent language. As your bond grows you
+   move together through six stages: glyph babble, its first sounds, fluent
+   speech in its own invented words, a phase where you begin to understand it,
+   broken real speech, and finally warm, fluent sentences. */
+var GLYPHS="\u25A0\u25B2\u25CF\u2756\u2727\u25C8\u2042\u2234\u00A7\u203B\u2638".split("");
+var SOFT=["bo","mi","wa","nuu","ree","lin","oom","aa","sho","mu","na","li","ee","wo"];
+var HARD=["tuk","pid","wob","ka","dur","grr","zk","tik","rok","ged","vt","kor","ix"];
+var CONCEPTS=["hello","food","play","happy","sleep","clean","sick","look","you","good","sun","rain","snow","storm","cloud","fog","cold","hot","wind"];
+var REAL={hello:"hello",food:"i want food",play:"play with me",happy:"i am happy",
+          sleep:"lights off please",clean:"clean please",sick:"i feel sick",
+          look:"look at me",you:"you",good:"good",
+          sun:"the sun is out",rain:"it is raining",snow:"it is snowing",storm:"a storm outside",
+          cloud:"it is cloudy",fog:"it is foggy",cold:"it is cold",hot:"it is warm",wind:"it is windy"};
+var WARM={hello:"hello, i am glad you came",food:"could i have some food",
+          play:"will you play with me",happy:"i am so happy with you",
+          sleep:"i am sleepy, lights off please",clean:"i could use a little cleaning",
+          sick:"i do not feel well",look:"look, look at me",
+          you:"i am glad you are here",good:"you are good to me",
+          sun:"the sun feels lovely today",rain:"i like the rain with you",snow:"look, it is snowing outside",
+          storm:"a storm is out there, but we are cosy",cloud:"the sky is soft and grey",fog:"everything is misty outside",
+          cold:"it is cold out, stay close",hot:"it is so warm today",wind:"the wind is blustery outside"};
+
+function lexFor(g){
+  /* a stable invented vocabulary, unique to this Viv */
+  var r=mulberry32((g.seed^0x9e3779b9)>>>0);
+  var harsh=r()<0.5, pool=harsh?HARD.concat(SOFT.slice(0,5)):SOFT.concat(HARD.slice(0,4));
+  var lex={};
+  for(var i=0;i<CONCEPTS.length;i++){
+    var parts=1+(r()<0.5?1:0), w="";
+    for(var j=0;j<=parts;j++) w+=pick(r,pool);
+    lex[CONCEPTS[i]]=w;
+  }
+  return lex;
+}
+var _lexCache={};
+function vivLex(g){ return _lexCache[g.id]||(_lexCache[g.id]=lexFor(g)); }
+
+function conceptOf(s){
+  if(s.sick) return "sick";
+  if(s.poops.length>=2) return "clean";
+  if(s.fullness<30) return "food";
+  if(s.energy<22 && isNight()) return "sleep";
+  if(s.calling) return s.callKind==="need"?"food":"look";
+  if(s.happy<40) return "play";
+  if(s.happy>78) return "happy";
+  return "hello";
+}
+
+function utter(v){
+  var s=v.s, g=v.g, lex=vivLex(g), con=conceptOf(s);
+  var bucket=Math.floor(now()/4500);
+  var wc=wxConcept();
+  if(wc && (con==="hello"||con==="happy")){ var wr=mulberry32(hashStr(g.id+"wx"+bucket)); if(wr()<0.5) con=wc; }
+  var r=mulberry32(hashStr(g.id+con+bucket));
+  var artic=s.bond + (stageOf(v)==="elder"?6:0);
+
+  if(artic<12){
+    /* pure glyph babble */
+    var len=3+Math.floor(r()*4), gl="";
+    for(var j=0;j<len;j++) gl+=pick(r,GLYPHS);
+    return {text:gl, glyph:true};
+  }
+  if(artic<26){
+    /* glyphs threaded with its own sound for this feeling */
+    var ln=2+Math.floor(r()*2), pre="";
+    for(var k=0;k<ln;k++) pre+=pick(r,GLYPHS);
+    return {text:pre+" "+lex[con], glyph:true};
+  }
+  if(artic<44){
+    /* fluent in its own invented language */
+    var out=[lex[con]];
+    if(r()<0.6) out.unshift(lex[pick(r,CONCEPTS)]);
+    if(r()<0.4) out.push(lex[pick(r,CONCEPTS)]);
+    return {text:out.join(" "), glyph:false};
+  }
+  if(artic<64){
+    /* you begin to understand: its word, then the meaning */
+    return {text:lex[con]+" ("+(REAL[con]||con).split(" ")[0]+")", glyph:false};
+  }
+  if(artic<82){
+    /* broken real speech */
+    var phr=(REAL[con]||"hello").split(" ");
+    if(phr.length>2) phr=phr.slice(0,2);
+    if(r()<0.5) phr.push("...");
+    return {text:phr.join(" "), glyph:false};
+  }
+  /* fluent and warm */
+  return {text:WARM[con]||REAL[con]||"hello", glyph:false};
+}
+
+function langTierOf(bond){ return bond<12?0:bond<26?1:bond<44?2:bond<64?3:bond<82?4:5; }
+function checkLang(v){
+  var t=langTierOf(v.s.bond||0);
+  if(t>(v.s.langTier||0)){
+    v.s.langTier=t;
+    var m=[null,
+      v.g.name+" is babbling its first sounds.",
+      v.g.name+" is finding its own little language.",
+      "You are starting to understand "+v.g.name+".",
+      v.g.name+" is speaking in real words now.",
+      v.g.name+" speaks with you, clear and warm."];
+    if(m[t]) toast(m[t]);
+  }
+}
+
+/* ---------- rendering ---------- */
+var cv=document.getElementById("tank"), cx=cv.getContext("2d");
+cx.imageSmoothingEnabled=false;
+var W=256,H=224,vivScale=1;
+var bands={airTop:8, landY:118, waterY:158};
+var anim=0, lastFrame=0, sprites={}; /* per viv runtime motion */
+
+function fitCanvas(){
+  var wrapEl=cv.parentElement, cw=wrapEl.clientWidth, ch=wrapEl.clientHeight;
+  if(cw<2||ch<2) return;
+  /* native height is fixed for the chunky 16-bit look; native width follows
+     the tank's shape so the scene fills the whole area edge to edge. */
+  H=224;
+  W=clamp(Math.round(H*(cw/ch)), 160, 1100);
+  cv.width=W; cv.height=H;
+  cx.imageSmoothingEnabled=false;
+  cv.style.width=cw+"px"; cv.style.height=ch+"px";
+  /* on wider tanks the Vivs would read tiny, so grow them with the tank's shape */
+  vivScale=clamp(2+(W/H-1.3)*0.45,2,2.6);
+}
+window.addEventListener("resize",fitCanvas);
+
+function spriteFor(slot){
+  var id=slot.g.id;
+  if(!sprites[id]){
+    var loco=slot.g.loco;
+    var y= loco==="air"?52 : loco==="water"?(Math.round((bands.waterY+H)/2)-2) : (bands.landY+2);
+    sprites[id]={x:60+Math.random()*120, y:y, baseY:y, tx:60+Math.random()*120, dir:1, hop:0, ph:Math.random()*6.28};
+  }
+  return sprites[id];
+}
+
+function drawScene(ts){
+  var dt=Math.min(0.05,(ts-lastFrame)/1000||0); lastFrame=ts; anim+=dt;
+  var night = (function(){var a=activeViv(); var dark=(a && a.s.lightsOn===false);
+    if(WX.on && WX.code!=null) return dark || !WX.isDay;
+    return dark || isNight();})();
+  var wk=(WX.on && WX.code!=null)?WX.kind:null;
+  /* sky, tinted by the weather outside */
+  var skc=skyColors(night,wk);
+  var grad=cx.createLinearGradient(0,0,0,bands.landY);
+  grad.addColorStop(0,skc[0]);grad.addColorStop(1,skc[1]);
+  cx.fillStyle=grad; cx.fillRect(0,0,W,bands.landY);
+  /* stars on clear nights */
+  if(night && (wk===null||wk==="clear")){cx.fillStyle="#d8e6ff";for(var s=0;s<18;s++){var sx=(s*53+13)%W, sy=(s*29+7)%(bands.landY-20);cx.globalAlpha=0.5+0.5*Math.sin(anim*2+s);cx.fillRect(sx,sy,1,1);}cx.globalAlpha=1;}
+  /* clouds drift in the sky behind the Vivs */
+  drawClouds(wk);
+  /* soil band */
+  cx.fillStyle= night?"#2a2113":"#5a4327"; cx.fillRect(0,bands.landY,W,bands.waterY-bands.landY);
+  cx.fillStyle= night?"#1f180e":"#46341d"; cx.fillRect(0,bands.landY,W,4);
+  /* a couple of plants */
+  cx.fillStyle= night?"#1c3a22":"#2f6b39";
+  for(var p=0;p<3;p++){var px=Math.round((p+1)/4*W); cx.fillRect(px,bands.landY-14,3,14); cx.fillRect(px-4,bands.landY-16,11,3);}
+  /* water band */
+  var wg=cx.createLinearGradient(0,bands.waterY,0,H);
+  wg.addColorStop(0, night?"#0c2433":"#13586f"); wg.addColorStop(1, night?"#071018":"#0a2f3d");
+  cx.fillStyle=wg; cx.fillRect(0,bands.waterY,W,H-bands.waterY);
+  cx.fillStyle="rgba(255,255,255,.12)";
+  for(var wv=0;wv<W;wv+=8){var yy=bands.waterY+2+Math.sin(anim*2+wv*0.3)*1.5;cx.fillRect(wv,yy,4,1);}
+
+  /* poops belong to the active viv, drawn on the soil */
+  var av=activeViv();
+  if(av){
+    for(var i=0;i<av.s.poops.length;i++){
+      var pp=av.s.poops[i]; drawPoop(pp.x, bands.landY+8+(i%2)*5);
+    }
+  }
+
+  /* draw each viv in its band */
+  for(var k=0;k<3;k++){
+    var slot=save.slots[k];
+    if(!slot) continue;
+    var sp=spriteFor(slot);
+    updateMotion(slot, sp, dt);
+    if(slot.s.egg) drawEgg(slot, sp);
+    else drawViv(slot, sp, k===save.active, vivScale);
+  }
+  drawWeatherFront(wk, dt);
+  requestAnimationFrame(drawScene);
+}
+
+function updateMotion(slot, sp, dt){
+  if(slot.s.egg){ sp.y=sp.baseY+Math.sin(anim*3)*1.2; return; }
+  var loco=slot.g.loco, asleep=slot.s.asleep;
+  sp.ph+=dt;
+  if(asleep){ sp.y=sp.baseY+Math.sin(anim*1.5)*1; return; }
+  /* wander horizontally */
+  if(Math.abs(sp.x-sp.tx)<3){ sp.tx=24+Math.random()*(W-48); }
+  var spd=(loco==="air"?22:loco==="water"?16:12);
+  var d=(sp.tx>sp.x?1:-1); sp.dir=d; sp.x+=d*spd*dt;
+  if(loco==="air") sp.y=sp.baseY+Math.sin(sp.ph*1.6)*10;
+  else if(loco==="water") sp.y=sp.baseY+Math.sin(sp.ph*2.2)*5;
+  else { /* land hop */
+    sp.hop-=dt; if(sp.hop<=0 && Math.random()<0.02){ sp.hop=0.5; }
+    var hp=sp.hop>0? Math.sin((0.5-sp.hop)/0.5*Math.PI)*9 : 0;
+    sp.y=sp.baseY-hp;
+  }
+}
+
+function drawPoop(x,y){
+  cx.fillStyle="#5a3d22"; cx.fillRect(x,y,5,3); cx.fillRect(x+1,y-2,3,2);
+  cx.fillStyle="#3c2814"; cx.fillRect(x+1,y+1,3,1);
+}
+function drawEgg(slot, sp){
+  var pal=slot.g.palette, x=Math.round(sp.x), y=Math.round(sp.y);
+  cx.save(); cx.translate(x,y); cx.scale(vivScale,vivScale);
+  cx.fillStyle=pal.line; cx.fillRect(-9,-12,18,24);
+  cx.fillStyle=pal.base; cx.fillRect(-8,-11,16,22);
+  cx.fillStyle=pal.belly; cx.fillRect(-8,-2,16,3);
+  cx.fillStyle=pal.accent; cx.fillRect(-6,-7,4,3); cx.fillRect(2,2,4,3);
+  cx.restore();
+}
+
+/* the procedural viv. drawn at low resolution so the upscale reads as pixel art. */
+function drawViv(slot, sp, isActive, escale){
+  escale=escale||1;
+  var g=slot.g, s=slot.s, pal=g.palette, ge=g.genes;
+  var st=stageOf(slot), sc=stageScale(st);
+  var x=Math.round(sp.x), y=Math.round(sp.y), dir=sp.dir;
+  var sick=s.sick, sad=s.happy<38, sleep=s.asleep, fat=s.weight>78;
+  var bw=Math.round((ge.body===2?22:16)*sc) + (fat?3:0);
+  var bh=Math.round((ge.body===1?22:16)*sc);
+
+  cx.save();
+  cx.translate(x,y);
+  cx.scale(escale,escale);
+  if(dir<0) cx.scale(-1,1);
+  cx.globalAlpha = sick?0.82:1;
+
+  /* shadow on the ground for land vivs */
+  if(g.loco==="land"){cx.fillStyle="rgba(0,0,0,.25)";cx.fillRect(-bw/2,Math.round(bh/2)+2,bw,2);}
+
+  function body(col){
+    if(ge.body===3){ /* segmented */
+      cx.fillStyle=col;
+      cx.fillRect(-bw/2,-bh/2+2,bw,bh-4);
+      cx.fillRect(-bw/2+2,-bh/2,bw-4,bh);
+      cx.fillStyle=pal.shade; for(var sgx=-bw/2+3;sgx<bw/2-2;sgx+=5){cx.fillRect(sgx,-bh/2+2,1,bh-4);}
+    } else {
+      cx.fillStyle=col;
+      cx.fillRect(-bw/2+2,-bh/2,bw-4,bh);
+      cx.fillRect(-bw/2,-bh/2+2,bw,bh-4);
+    }
+  }
+  /* outline */
+  cx.fillStyle=pal.line;
+  cx.fillRect(-bw/2-1,-bh/2-1,bw+2,bh+2);
+  body(pal.base);
+  /* belly */
+  cx.fillStyle=pal.belly; cx.fillRect(-bw/2+3,bh/2-5,bw-6,4);
+  /* shade bottom */
+  cx.fillStyle=pal.shade; cx.fillRect(-bw/2+2,bh/2-2,bw-4,2);
+
+  /* pattern */
+  if(ge.pattern===1){ cx.fillStyle=pal.accent; for(var d=0;d<4;d++){cx.fillRect(-bw/4+ (d%2)*7 -3, -bh/4 + Math.floor(d/2)*7, 3,3);} }
+  else if(ge.pattern===2){ cx.fillStyle=pal.accent; for(var st2=-bh/2+3; st2<bh/2-3; st2+=5){cx.fillRect(-bw/2+2,st2,bw-4,2);} }
+  else if(ge.pattern===3){ cx.fillStyle=pal.accent; cx.fillRect(-bw/4,-bh/2+2,bw/2,bh-6); }
+
+  /* limbs by loco */
+  cx.fillStyle=pal.shade;
+  if(g.loco==="water"){
+    var fl=Math.sin(anim*6)*2;
+    cx.fillStyle=pal.accent;
+    cx.fillRect(bw/2-1,-2, 6, 4+fl);            /* tail */
+    cx.fillRect(-bw/2-4,0,5,3+ (ge.limbs?2:0)); /* side fin */
+  } else if(g.loco==="air"){
+    var wf=Math.abs(Math.sin(anim*10))*4;
+    cx.fillStyle=pal.accent;
+    cx.fillRect(-bw/2-5,-3-wf,6,5);  /* left wing */
+    cx.fillRect(bw/2-1,-3-wf,6,5);   /* right wing */
+  } else {
+    cx.fillStyle=pal.shade;
+    var legs=(ge.limbs===2?4:2), gap=(bw-6)/(legs-1||1);
+    for(var l=0;l<legs;l++){ var lx=-bw/2+3+l*gap; cx.fillRect(lx,bh/2-1,2,4); }
+  }
+
+  /* crest */
+  cx.fillStyle=pal.accent;
+  if(ge.crest===1){ cx.fillRect(-3,-bh/2-5,2,5); cx.fillRect(2,-bh/2-5,2,5); cx.fillStyle=pal.base; cx.fillRect(-4,-bh/2-7,2,2); cx.fillRect(3,-bh/2-7,2,2);}
+  else if(ge.crest===2){ cx.fillStyle=pal.belly; cx.fillRect(-bw/2+2,-bh/2-3,3,4); cx.fillRect(bw/2-5,-bh/2-3,3,4);}
+  else if(ge.crest===3){ cx.fillStyle=pal.accent; for(var c=-3;c<=3;c+=3){cx.fillRect(c,-bh/2-4,2,5);} }
+
+  /* eyes */
+  var ex=[], n=ge.eyes;
+  if(n===1) ex=[0]; else if(n===2) ex=[-4,4]; else ex=[-6,0,6];
+  for(var e=0;e<ex.length;e++){
+    var eo=ex[e], ey=-bh/6;
+    cx.fillStyle=pal.eye;
+    if(ge.eyeShape===0){ cx.fillRect(eo-2,ey-2,5,5); }
+    else if(ge.eyeShape===1){ cx.fillRect(eo-2,ey-3,5,7); }
+    else { cx.fillRect(eo-2,ey,5,3); }
+    cx.fillStyle=pal.pupil;
+    if(sleep){ cx.fillRect(eo-2,ey+1,5,1); }
+    else { var px=eo + (dir>0?1:0); cx.fillRect(px-1,ey-1+(ge.eyeShape===1?2:0),2,2); }
+  }
+  /* mouth mood */
+  cx.fillStyle=pal.line;
+  if(sad||sick){ cx.fillRect(-2,bh/6+2,5,1); cx.fillRect(-3,bh/6+1,1,1); cx.fillRect(3,bh/6+1,1,1); }
+  else if(s.happy>72){ cx.fillRect(-3,bh/6+2,1,1); cx.fillRect(3,bh/6+2,1,1); cx.fillRect(-2,bh/6+3,5,1); }
+  else { cx.fillRect(-2,bh/6+3,4,1); }
+
+  cx.restore();
+
+  /* status icons above (not mirrored) */
+  if(sick){ drawSkull(x, y-(bh*escale)/2-10); }
+  if(sleep){ cx.fillStyle="#dfe9ff"; cx.font="8px monospace"; cx.fillText("z", x+(bw*escale)/2, y-(bh*escale)/2-4+Math.sin(anim*3)); }
+  if(s.calling && !sick){ cx.fillStyle="#ffe08a"; cx.fillRect(x-1,y-bh/2-12,2,6); cx.fillRect(x-1,y-bh/2-4,2,2); }
+  if(isActive){ cx.fillStyle="#e7c277"; cx.fillRect(x-2,y-bh/2-16,4,1); cx.fillRect(x-1,y-bh/2-15,2,1);}
+}
+function drawSkull(x,y){
+  cx.fillStyle="#e9e2d0"; cx.fillRect(x-3,y,6,5); cx.fillRect(x-2,y+5,4,2);
+  cx.fillStyle="#1a1620"; cx.fillRect(x-2,y+1,2,2); cx.fillRect(x+1,y+1,1,2); cx.fillRect(x-1,y+4,2,1);
+}
+
+/* ---------- UI ---------- */
+var speechEl=document.getElementById("speech");
+var metaName=document.getElementById("metaName"), metaStage=document.getElementById("metaStage");
+var gaugesEl=document.getElementById("gauges"), tabsEl=document.getElementById("tabs");
+var callTag=document.getElementById("callTag");
+var scrim=document.getElementById("scrim"), panel=document.getElementById("panel");
+
+var GAUGES=[["FULL","fullness"],["HAPPY","happy"],["ENRGY","energy"],["HLTH","health"],["CLEAN","_clean"]];
+function renderGauges(v){
+  gaugesEl.innerHTML="";
+  for(var i=0;i<GAUGES.length;i++){
+    var key=GAUGES[i][1], val;
+    if(key==="_clean") val=clamp(100 - v.s.poops.length*20,0,100);
+    else val=v.s[key];
+    var g=document.createElement("div"); g.className="gauge";
+    var lab=document.createElement("div"); lab.className="lab"; lab.textContent=GAUGES[i][0];
+    var bar=document.createElement("div"); bar.className="bar"+(val<30?" lo":"");
+    var fill=document.createElement("i"); fill.style.width=Math.round(val)+"%";
+    bar.appendChild(fill); g.appendChild(lab); g.appendChild(bar); gaugesEl.appendChild(g);
+  }
+}
+function renderTabs(){
+  tabsEl.innerHTML="";
+  for(var i=0;i<3;i++){
+    (function(idx){
+      var slot=save.slots[idx];
+      var b=document.createElement("button"); b.className="tab"+(idx===save.active?" active":"")+(slot?"":" empty");
+      b.setAttribute("role","tab");
+      if(slot){ b.innerHTML='<div class="n">'+escapeHtml(slot.g.name)+'</div>'+slot.g.loco; }
+      else { b.innerHTML='<div class="n">empty</div>tap to hatch'; }
+      b.onclick=function(){ save.active=idx; if(!slot){ openHatch(); } else { writeSave(); refresh(); } };
+      tabsEl.appendChild(b);
+    })(i);
+  }
+}
+function escapeHtml(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
+
+function refresh(){
+  renderTabs();
+  var v=activeViv();
+  if(!v){ metaName.textContent="NO VIV"; metaStage.textContent=""; speechEl.textContent="\u2026"; gaugesEl.innerHTML=""; callTag.style.display="none"; return; }
+  if(v.slot.egg){
+    metaName.textContent=v.g.name.toUpperCase()+" (EGG)"; metaStage.textContent="unhatched";
+    speechEl.innerHTML="tap the egg to hatch"; gaugesEl.innerHTML=""; callTag.style.display="none";
+    setControlsEnabled(false); return;
+  }
+  setControlsEnabled(true);
+  metaName.textContent=v.g.name.toUpperCase();
+  metaStage.textContent=stageOf(v.slot).toUpperCase()+(v.s.weight>78?" \u00b7 PLUMP":"");
+  renderGauges(v);
+  var u=utter(v); speechEl.innerHTML=u.glyph?'<span class="glyph">'+escapeHtml(u.text)+'</span>':escapeHtml(u.text);
+  callTag.style.display=v.s.calling?"block":"none";
+  callTag.textContent = v.s.calling ? "! "+v.g.name.toUpperCase()+" WANTS YOU !" : "";
+}
+function setControlsEnabled(on){
+  var btns=document.querySelectorAll(".controls .btn");
+  for(var i=0;i<btns.length;i++){
+    var a=btns[i].getAttribute("data-act");
+    if(a==="more") continue;
+    btns[i].disabled=!on;
+  }
+}
+
+/* ---------- actions ---------- */
+function need(v){ if(!v){toast("Hatch a Viv first.");return false;} if(v.slot.egg){toast("This egg has not hatched yet.");return false;} return true; }
+function asleepGuard(v){ if(v.s.asleep){ toast(v.g.name+" is asleep. Turn the light on to wake it."); return true;} return false; }
+
+function resolveCall(v, correct){
+  if(!v.s.calling) return;
+  if(v.s.callKind==="naughty" && !correct){ /* answering a naughty call with care spoils it a little */
+    v.s.discipline=clamp(v.s.discipline-3,0,100);
+  }
+  v.s.calling=false; v.s.callKind=null;
+}
+
+var actions={
+  feed:function(v){ if(asleepGuard(v))return; openFeed(v); },
+  play:function(v){ if(asleepGuard(v))return; openPlay(v); },
+  clean:function(v){
+    if(v.s.poops.length===0){ toast("Nothing to clean. Tidy already."); return; }
+    v.s.poops=[]; v.s.happy=clamp(v.s.happy+4,0,100); v.s.bond=clamp(v.s.bond+1,0,100);
+    bump(v,"clean"); resolveCall(v,true); sfx("bubble"); toast("All tidy."); after(v);
+  },
+  meds:function(v){
+    if(!v.s.sick){ toast(v.g.name+" is not sick right now."); return; }
+    v.s.doses=Math.max(0,v.s.doses-1);
+    if(v.s.doses<=0){ v.s.sick=false; v.s.health=clamp(v.s.health+30,0,100); v.s.bond=clamp(v.s.bond+2,0,100); bump(v,"meds"); sfx("good"); toast(v.g.name+" is feeling better."); }
+    else { v.s.health=clamp(v.s.health+10,12,100); sfx("eat"); toast("One dose down. Needs another."); }
+    after(v);
+  },
+  lights:function(v){
+    v.s.lightsOn=!v.s.lightsOn;
+    if(!v.s.lightsOn && isNight()) v.s.asleep=true;
+    if(v.s.lightsOn) v.s.asleep=false;
+    sfx(); toast("Lights "+(v.s.lightsOn?"on":"off")+"."); after(v);
+  },
+  scold:function(v){ if(asleepGuard(v))return;
+    if(v.s.calling && v.s.callKind==="naughty"){
+      v.s.discipline=clamp(v.s.discipline+8,0,100); v.s.calling=false; v.s.callKind=null;
+      bump(v,"scoldGood"); sfx("good"); toast("Good call. "+v.g.name+" was just being naughty.");
+    } else if(v.s.calling && v.s.callKind==="need"){
+      v.s.happy=clamp(v.s.happy-8,0,100); v.s.bond=clamp(v.s.bond-3,0,100); v.s.calling=false;
+      bump(v,"scoldBad"); sfx("bad"); toast(v.g.name+" actually needed something. It looks hurt.");
+    } else {
+      v.s.happy=clamp(v.s.happy-5,0,100); sfx("bad"); toast(v.g.name+" did nothing wrong.");
+    }
+    after(v);
+  },
+  talk:function(v){ var u=utter(v); speechEl.innerHTML=u.glyph?'<span class="glyph">'+escapeHtml(u.text)+'</span>':escapeHtml(u.text); v.s.bond=clamp(v.s.bond+0.5,0,100); bump(v,"talk"); checkLang(v); sfx("bubble"); writeSave(); },
+  art:function(v){ openArt(v); },
+  more:function(){ openMenu(); }
+};
+
+function after(v){ v.s.lastTick=now(); checkLang(v); writeSave(); refresh(); }
+
+document.getElementById("controls").addEventListener("click",function(e){
+  var b=e.target.closest(".btn"); if(!b) return;
+  var act=b.getAttribute("data-act");
+  if(act==="more"){ actions.more(); return; }
+  var v=activeViv(); if(!need(v)) return;
+  actions[act](v);
+});
+
+/* feed submenu */
+function openFeed(v){
+  panel.innerHTML=
+    '<h2>FEED '+escapeHtml(v.g.name.toUpperCase())+'</h2>'+
+    '<p>A meal fills the belly. A snack is a treat that lifts the mood, but too many snacks make a Viv plump.</p>'+
+    '<div class="row">'+
+      '<button class="btn" id="fMeal"><span class="ic">&#127858;</span>Meal</button>'+
+      '<button class="btn" id="fSnack"><span class="ic">&#127856;</span>Snack</button>'+
+    '</div><div class="closeline"><button class="chip" id="fClose">CLOSE</button></div>';
+  showScrim();
+  document.getElementById("fMeal").onclick=function(){
+    v.s.fullness=clamp(v.s.fullness+34,0,100); v.s.bond=clamp(v.s.bond+1,0,100);
+    bump(v,"meal"); resolveCall(v,true); sfx("eat"); closeScrim(); toast(v.g.name+" enjoyed the meal."); after(v);
+  };
+  document.getElementById("fSnack").onclick=function(){
+    v.s.fullness=clamp(v.s.fullness+12,0,100); v.s.happy=clamp(v.s.happy+9,0,100);
+    v.s.weight=clamp(v.s.weight+6,20,100);
+    bump(v,"snack"); resolveCall(v,true); sfx("eat"); closeScrim(); toast(v.s.weight>78?v.g.name+" loved it, but it is getting plump.":v.g.name+" loved the snack."); after(v);
+  };
+  document.getElementById("fClose").onclick=closeScrim;
+}
+
+/* left or right guessing game */
+function openPlay(v){
+  var side=Math.random()<0.5?"L":"R";
+  panel.innerHTML=
+    '<h2>PLAY WITH '+escapeHtml(v.g.name.toUpperCase())+'</h2>'+
+    '<p>'+escapeHtml(v.g.name)+' hid a treat behind one hand. Pick the hand you think it is in.</p>'+
+    '<div class="guess"><div class="hand" id="hL" tabindex="0">&#129308;</div><div class="hand" id="hR" tabindex="0">&#129307;</div></div>'+
+    '<div class="closeline"><button class="chip" id="pClose">CLOSE</button></div>';
+  showScrim();
+  function guess(pickSide){
+    var win=(pickSide===side);
+    if(win){ v.s.happy=clamp(v.s.happy+16,0,100); v.s.bond=clamp(v.s.bond+2,0,100); bump(v,"playWin"); resolveCall(v,true); sfx("good"); toast("You found it. "+v.g.name+" is delighted."); }
+    else { v.s.happy=clamp(v.s.happy+6,0,100); v.s.bond=clamp(v.s.bond+1,0,100); bump(v,"playLose"); resolveCall(v,true); sfx("bubble"); toast("Not that hand, but "+v.g.name+" had fun anyway."); }
+    closeScrim(); after(v);
+  }
+  document.getElementById("hL").onclick=function(){guess("L");};
+  document.getElementById("hR").onclick=function(){guess("R");};
+  document.getElementById("hL").onkeydown=function(e){if(e.key==="Enter"||e.key===" ")guess("L");};
+  document.getElementById("hR").onkeydown=function(e){if(e.key==="Enter"||e.key===" ")guess("R");};
+  document.getElementById("pClose").onclick=closeScrim;
+}
+
+/* ---------- generative art bloom ---------- */
+/* A strange attractor seeded by the Viv's identity and warped by how it has
+   been raised, painted additively in its own palette. It deepens with the
+   relationship and dims when the Viv is sad or sick. Parameters are chosen
+   for genuine chaos (positive Lyapunov exponent) and the result is auto fit
+   to the frame, so every Viv yields a rich bloom rather than a faint blob. */
+function attrStep(type,a,b,c,d,x,y){
+  if(type===0) return [Math.sin(a*y)+c*Math.cos(a*x), Math.sin(b*x)+d*Math.cos(b*y)];
+  return [Math.sin(a*y)-Math.cos(b*x), Math.sin(c*x)-Math.cos(d*y)];
+}
+function lyapOf(type,a,b,c,d){
+  var x=0.1,y=0.1,xe=x+1e-6,ye=y,sum=0,n=0;
+  for(var i=0;i<700;i++){
+    var p=attrStep(type,a,b,c,d,x,y), e=attrStep(type,a,b,c,d,xe,ye); x=p[0]; y=p[1];
+    if(i>20){ var dx=e[0]-x,dy=e[1]-y,dd=Math.sqrt(dx*dx+dy*dy)||1e-12; sum+=Math.log(dd/1e-6); n++; xe=x+1e-6*dx/dd; ye=y+1e-6*dy/dd; }
+    else { xe=e[0]; ye=e[1]; }
+  }
+  return sum/(n||1);
+}
+function boundsOf(type,a,b,c,d){
+  var x=0.1,y=0.1,mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
+  for(var i=0;i<3500;i++){ var p=attrStep(type,a,b,c,d,x,y); x=p[0]; y=p[1]; if(i<30) continue; if(x<mnx)mnx=x; if(x>mxx)mxx=x; if(y<mny)mny=y; if(y>mxy)mxy=y; }
+  return [mnx,mxx,mny,mxy];
+}
+function probeOf(type,a,b,c,d){
+  var x=0.1,y=0.1, N=4200, X=[], Y=[], m=0;
+  for(var i=0;i<N;i++){ var p=attrStep(type,a,b,c,d,x,y); x=p[0]; y=p[1]; if(i<40) continue; X[m]=x; Y[m]=y; m++; }
+  if(m<10) return {bb:[-1,1,-1,1], cover:0};
+  var xs=X.slice(0,m).sort(function(p,q){return p-q;}), ys=Y.slice(0,m).sort(function(p,q){return p-q;});
+  var lo=Math.floor(m*0.02), hi=Math.min(m-1,Math.floor(m*0.98));
+  var mnx=xs[lo], mxx=xs[hi], mny=ys[lo], mxy=ys[hi];
+  var gw=Math.max(1e-6,mxx-mnx), gh=Math.max(1e-6,mxy-mny), G=34, seen={}, occ=0;
+  for(var k=0;k<m;k++){ var gx=((X[k]-mnx)/gw*G)|0, gy=((Y[k]-mny)/gh*G)|0; if(gx<0||gy<0||gx>=G||gy>=G) continue; var key=gx*G+gy; if(!seen[key]){ seen[key]=1; occ++; } }
+  return {bb:[mnx,mxx,mny,mxy], cover:occ/(G*G)};
+}
+function paintBloom(pc, v, w, h){
+  var g=v.g, s=v.s, pal=g.palette, T=tallyOf(s);
+  var total=T.meal+T.snack+T.playWin+T.playLose+T.clean+T.meds+T.scoldGood+T.talk;
+  var rng=mulberry32((g.seed ^ (((total+1)*2654435761)>>>0))>>>0);
+
+  pc.globalCompositeOperation="source-over"; pc.globalAlpha=1;
+  pc.fillStyle=pal.line; pc.fillRect(0,0,w,h);
+
+  /* a faint spark for each time you have spoken together */
+  var sparks=Math.min(70,T.talk); pc.fillStyle=pal.belly;
+  for(var sp=0;sp<sparks;sp++){ pc.globalAlpha=0.07+rng()*0.1; pc.fillRect((rng()*w)|0,(rng()*h)|0,1,1); }
+  pc.globalAlpha=1;
+
+  var type=g.genes.body%2;
+  var indulge=total>0?T.snack/total:0, playRate=total>0?(T.playWin+T.playLose)/total:0;
+
+  /* search the Viv's own identity for a full, chaotic attractor */
+  var best=null, bestBB=null, bestScore=-1e9, bestCover=0;
+  for(var at=0;at<70;at++){
+    var ca=-2.3+rng()*4.6, cb=-2.3+rng()*4.6, cc=-1.5+rng()*3.0, cd=-1.5+rng()*3.0;
+    var L=lyapOf(type,ca,cb,cc,cd), pr=probeOf(type,ca,cb,cc,cd);
+    var score=pr.cover*3 + Math.min(0.4,Math.max(0,L));
+    if(score>bestScore){ bestScore=score; best=[ca,cb,cc,cd]; bestBB=pr.bb; bestCover=pr.cover; }
+    if(pr.cover>0.18 && L>0.06) break;
+  }
+  /* personalize gently: how it was raised nudges the shape, but a guard keeps
+     the nudge from ever collapsing the bloom */
+  var a=best[0]+(indulge-0.18)*0.5, b=best[1]+playRate*0.5, c=best[2]+(s.happy-50)/320, d=best[3];
+  var pr2=probeOf(type,a,b,c,d);
+  if(pr2.cover<bestCover*0.6){
+    a=best[0]+(a-best[0])*0.35; b=best[1]+(b-best[1])*0.35; c=best[2]+(c-best[2])*0.35; pr2=probeOf(type,a,b,c,d);
+    if(pr2.cover<bestCover*0.6){ a=best[0]; b=best[1]; c=best[2]; d=best[3]; pr2=probeOf(type,a,b,c,d); }
+  }
+  var bb=pr2.bb, pad=0.09;
+  var bw=Math.max(0.3,bb[1]-bb[0]), bh2=Math.max(0.3,bb[3]-bb[2]);
+  var scl=Math.min(w*(1-2*pad)/bw, h*(1-2*pad)/bh2);
+  var ox=w/2-((bb[0]+bb[1])/2)*scl, oy=h/2-((bb[2]+bb[3])/2)*scl;
+
+  var vitality=clamp((s.happy*0.6+s.health*0.4)/100,0,1);
+  var desat=s.sick?0.6:(1-vitality)*0.45, grey=[140,140,148];
+  function mix(hex){var r=hexToRgb(hex);return [lerpN(r[0],grey[0],desat),lerpN(r[1],grey[1],desat),lerpN(r[2],grey[2],desat)];}
+  var stops=[mix(pal.shade),mix(pal.base),mix(pal.accent),mix(pal.belly)];
+
+  var x=0.1,y=0.1, pts=Math.min(140000, 26000 + total*2200);
+  pc.globalCompositeOperation="lighter";
+  var baseAlpha=0.05+0.05*vitality;
+  for(var i=0;i<pts;i++){
+    var p=attrStep(type,a,b,c,d,x,y), vx=p[0]-x, vy=p[1]-y; x=p[0]; y=p[1];
+    if(i<40) continue;
+    var px=ox+x*scl, py=oy+y*scl;
+    if(px<0||py<0||px>=w||py>=h) continue;
+    var spd=Math.min(1,Math.sqrt(vx*vx+vy*vy)/2.4);
+    var col=rampColor(stops,spd);
+    pc.fillStyle="rgb("+(col[0]|0)+","+(col[1]|0)+","+(col[2]|0)+")";
+    pc.globalAlpha=baseAlpha; pc.fillRect(px|0,py|0,1,1);
+  }
+
+  /* elders carry a second, fainter attractor woven in */
+  if(ageDays(v)>=10){
+    var r2=mulberry32((g.seed*9176+1)>>>0), bst=null, L2=-1e9;
+    for(var k=0;k<20;k++){ var pa=-2.2+r2()*4.4,pb=-2.2+r2()*4.4,pc2=-1.4+r2()*2.8,pd=-1.4+r2()*2.8, Lk=lyapOf(type,pa,pb,pc2,pd); if(Lk>L2){ L2=Lk; bst=[pa,pb,pc2,pd]; } if(Lk>0.12) break; }
+    var b2=probeOf(type,bst[0],bst[1],bst[2],bst[3]).bb;
+    var s2=Math.min(w*0.7/Math.max(0.3,b2[1]-b2[0]), h*0.7/Math.max(0.3,b2[3]-b2[2]));
+    var o2x=w/2-((b2[0]+b2[1])/2)*s2, o2y=h/2-((b2[2]+b2[3])/2)*s2, x2=0.1,y2=0.1, accent=stops[2];
+    pc.fillStyle="rgb("+(accent[0]|0)+","+(accent[1]|0)+","+(accent[2]|0)+")";
+    for(var j=0;j<45000;j++){ var q=attrStep(type,bst[0],bst[1],bst[2],bst[3],x2,y2); x2=q[0]; y2=q[1]; if(j<40) continue; var qx=o2x+x2*s2, qy=o2y+y2*s2; if(qx<0||qy<0||qx>=w||qy>=h) continue; pc.globalAlpha=baseAlpha*0.45; pc.fillRect(qx|0,qy|0,1,1); }
+  }
+
+  pc.globalCompositeOperation="source-over"; pc.globalAlpha=1;
+  if(s.sick){ pc.fillStyle="rgba(8,5,12,.40)"; pc.fillRect(0,0,w,h); }
+  var vg=pc.createRadialGradient(w/2,h/2,Math.min(w,h)*0.2,w/2,h/2,Math.min(w,h)*0.64);
+  vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,.5)");
+  pc.fillStyle=vg; pc.fillRect(0,0,w,h);
+}
+
+function bloomBlurb(v){
+  var T=tallyOf(v.s), total=T.meal+T.snack+T.playWin+T.playLose+T.clean+T.meds+T.scoldGood+T.talk;
+  if(total<3) return "A first bloom, still sparse. It will deepen as you and "+escapeHtml(v.g.name)+" share more days.";
+  var parts=[];
+  if(T.snack>T.meal && T.snack>2) parts.push("sweet and indulgent");
+  if(T.playWin+T.playLose>5) parts.push("turbulent with play");
+  if(T.clean+T.meds>4) parts.push("steadily tended");
+  if(v.s.sick) parts.push("clouded while it is unwell");
+  else if(v.s.happy>72) parts.push("bright with good days");
+  else if(v.s.happy<40) parts.push("dimmed by hard days");
+  var tail=parts.length?(" It has grown "+parts.slice(0,2).join(" and ")+"."):"";
+  return "A portrait of your days with "+escapeHtml(v.g.name)+", traced from everything you have done together."+tail;
+}
+
+function openArt(v){
+  if(v.slot.egg){ toast("Wait for the egg to hatch first."); return; }
+  panel.innerHTML=
+    '<h2>THE BLOOM OF '+escapeHtml(v.g.name.toUpperCase())+'</h2>'+
+    '<p>'+bloomBlurb(v)+'</p>'+
+    '<canvas id="bloom" width="720" height="720" style="width:100%;display:block;border:2px solid #000;border-radius:4px;background:#0a0a12"></canvas>'+
+    '<div class="row" style="margin-top:12px"><button class="btn" id="bSave"><span class="ic">&#11015;</span>Save image</button></div>'+
+    '<div class="closeline"><button class="chip" id="bClose">CLOSE</button></div>';
+  showScrim();
+  paintBloom(document.getElementById("bloom").getContext("2d"), v, 720, 720);
+  document.getElementById("bSave").onclick=function(){
+    var c=document.getElementById("bloom");
+    try{
+      c.toBlob(function(blob){
+        if(!blob){ toast("Could not save the image."); return; }
+        var url=URL.createObjectURL(blob), a=document.createElement("a");
+        a.href=url; a.download=("bloom-"+v.g.name+".png").replace(/[^a-z0-9.\-]/gi,"_");
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function(){URL.revokeObjectURL(url);},1500); toast("Saved the bloom of "+v.g.name+".");
+      },"image/png");
+    }catch(e){ toast("Could not save the image."); }
+  };
+  document.getElementById("bClose").onclick=closeScrim;
+}
+
+/* hatch a new viv into the active empty slot */
+function openHatch(){
+  var preview=makeGenome(uid());
+  function render(){
+    panel.innerHTML=
+      '<h2>HATCH A NEW VIV</h2>'+
+      '<p>Each Viv is one of a kind. Its shape, colors, and nature come from its seed. Reroll until one calls to you, then name it.</p>'+
+      '<canvas id="prev" width="120" height="120" style="image-rendering:pixelated;width:120px;height:120px;display:block;margin:0 auto 10px;background:#0a1622;border:2px solid #000;border-radius:4px"></canvas>'+
+      '<input type="text" id="hName" maxlength="14" value="'+escapeHtml(preview.name)+'">'+
+      '<div class="row">'+
+        '<button class="btn" id="hRoll"><span class="ic">&#127922;</span>Reroll</button>'+
+        '<button class="btn" id="hGo"><span class="ic">&#10003;</span>Hatch</button>'+
+      '</div><div class="closeline"><button class="chip" id="hClose">CLOSE</button></div>';
+    drawPreview(preview);
+    document.getElementById("hRoll").onclick=function(){ preview=makeGenome(uid()); document.getElementById("hName").value=preview.name; drawPreview(preview); sfx("bubble"); };
+    document.getElementById("hGo").onclick=function(){
+      var nm=document.getElementById("hName").value.trim().slice(0,14)||preview.name;
+      preview.name=nm;
+      var slot={g:preview, s:freshState()}; slot.s.egg=true; slot.s.lastTick=now();
+      save.slots[save.active]=slot; writeSave(); closeScrim(); sfx("good"); toast("A "+nm+" egg appears. Tap it to hatch."); refresh();
+    };
+    document.getElementById("hClose").onclick=closeScrim;
+  }
+  showScrim(); render();
+}
+function drawPreview(g){
+  var c=document.getElementById("prev"); if(!c) return; var p=c.getContext("2d"); p.imageSmoothingEnabled=false;
+  p.clearRect(0,0,120,120);
+  /* reuse the same renderer by faking a slot and sprite */
+  var slot={g:g, s:freshState()};
+  var keep={cx:cx}; /* temporarily target preview ctx */
+  var oldcx=cx; cx=p;
+  var oldAnim=anim;
+  drawVivAt(slot, 60, 70, 1, 1.4);
+  cx=oldcx; anim=oldAnim;
+}
+/* helper to draw a viv at an explicit position and scale (used by preview) */
+function drawVivAt(slot, x, y, dir, mul){
+  var sp={x:x,y:y,baseY:y,dir:dir,ph:0,hop:0};
+  var save_=stageScale; /* no-op to keep closure */
+  var g=slot.g; var oldBornStage=null;
+  /* draw with adult scale for preview clarity */
+  var tmp=slot.s.egg; slot.s.egg=false;
+  var prevAge=g.born; g.born=now()-5*86400000; /* adult */
+  /* temporarily enlarge via custom: call drawViv but it reads stageOf; adult gives sc 1, multiply by drawing translate */
+  cx.save(); cx.translate(x,y); cx.scale(mul,mul); cx.translate(-x,-y);
+  drawViv(slot, sp, false);
+  cx.restore();
+  g.born=prevAge; slot.s.egg=tmp;
+}
+
+/* menu: rename, trade, free, sound, about */
+function openMenu(){
+  var v=activeViv();
+  panel.innerHTML=
+    '<h2>VIVARIUM</h2>'+
+    '<div class="row" style="flex-direction:column">'+
+      '<button class="btn" id="mHatch"><span class="ic">&#129370;</span>Hatch into empty slot</button>'+
+      (v&&!v.slot.egg?'<button class="btn" id="mRename"><span class="ic">&#9998;</span>Rename '+escapeHtml(v.g.name)+'</button>':'')+
+      (v?'<button class="btn" id="mExport"><span class="ic">&#11015;</span>Export '+escapeHtml(v.g.name)+' (trade)</button>':'')+
+      (v&&!v.slot.egg?'<button class="btn" id="mBloom"><span class="ic">&#127912;</span>View the bloom</button>':'')+
+      '<button class="btn" id="mImport"><span class="ic">&#11014;</span>Import a Viv</button>'+
+      (v?'<button class="btn" id="mFree"><span class="ic">&#127807;</span>Set '+escapeHtml(v.g.name)+' free</button>':'')+
+      '<button class="btn" id="mAbout"><span class="ic">&#8505;</span>About</button>'+
+    '</div><div class="closeline"><button class="chip" id="mClose">CLOSE</button></div>'+
+    '<input type="file" id="fileIn" accept="application/json,.json" class="hidden">';
+  showScrim();
+  bind("mHatch",function(){ var empty=save.slots.indexOf(null); if(empty<0){toast("All three slots are full. Set one free first.");return;} save.active=empty; openHatch(); });
+  bind("mRename",function(){ openRename(v); });
+  bind("mExport",function(){ exportViv(v); });
+  bind("mBloom",function(){ openArt(v); });
+  bind("mImport",function(){ document.getElementById("fileIn").click(); });
+  bind("mFree",function(){ openFree(v); });
+  bind("mAbout",function(){ openAbout(); });
+  document.getElementById("mClose").onclick=closeScrim;
+  document.getElementById("fileIn").onchange=function(e){ importFile(e.target.files[0]); };
+}
+function bind(id,fn){var el=document.getElementById(id); if(el) el.onclick=fn;}
+
+function openRename(v){
+  panel.innerHTML='<h2>RENAME</h2><input type="text" id="rn" maxlength="14" value="'+escapeHtml(v.g.name)+'"><div class="row"><button class="btn" id="rnGo">Save</button></div><div class="closeline"><button class="chip" id="rnClose">CLOSE</button></div>';
+  document.getElementById("rnGo").onclick=function(){ var nm=document.getElementById("rn").value.trim().slice(0,14); if(nm){v.g.name=nm; writeSave(); refresh();} closeScrim(); };
+  document.getElementById("rnClose").onclick=closeScrim;
+}
+function openFree(v){
+  panel.innerHTML='<h2>SET FREE</h2><p>Releasing '+escapeHtml(v.g.name)+' returns it to the wild and opens its slot. This cannot be undone. Export it first if you want to keep a copy.</p><div class="row"><button class="btn" id="frYes"><span class="ic">&#127807;</span>Release</button><button class="btn" id="frNo">Keep</button></div>';
+  showScrim();
+  document.getElementById("frYes").onclick=function(){ var idx=save.active; delete sprites[v.g.id]; save.slots[idx]=null; writeSave(); closeScrim(); toast(v.g.name+" returns to the wild. Be well."); refresh(); };
+  document.getElementById("frNo").onclick=closeScrim;
+}
+function openAbout(){
+  panel.innerHTML='<h2>ABOUT VIVARIUM</h2><p>A pocket habitat for raising Vivs. Feed them, play, keep them clean and rested, and they will slowly learn to speak with you. Vivs never die. Neglect only makes them sad or sick, and care always brings them back.</p><p>Tap WX to let your Vivs feel your real local weather. Their sky changes with yours, and they will mention it as they learn to talk.</p><p style="color:var(--crt-dim)">Trade Vivs with friends by exporting a card and importing theirs. MBPARKS ARCADE. GPL-3.0.</p><div class="closeline"><button class="chip" id="abClose">CLOSE</button></div>';
+  document.getElementById("abClose").onclick=closeScrim;
+}
+
+/* ---------- trade: export and import json ---------- */
+function exportViv(v){
+  var card={ vivarium:1, kind:"viv-card", g:v.g, s:v.s };
+  var blob=new Blob([JSON.stringify(card,null,2)],{type:"application/json"});
+  var url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=("viv-"+v.g.name+".json").replace(/[^a-z0-9.\-]/gi,"_");
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},1500);
+  closeScrim(); toast("Exported "+v.g.name+". Send the file to a friend.");
+}
+function importFile(file){
+  if(!file) return;
+  var r=new FileReader();
+  r.onload=function(){
+    try{
+      var card=JSON.parse(r.result);
+      if(!card||card.kind!=="viv-card"||!card.g){ toast("That file is not a Viv card."); return; }
+      var empty=save.slots.indexOf(null);
+      if(empty<0){ toast("All slots full. Set one free to take in a new Viv."); return; }
+      card.g.id=uid(); /* fresh local id so it can coexist with the original */
+      var slot={g:card.g, s:card.s||freshState()}; slot.s.lastTick=now(); slot.s.calling=false;
+      save.slots[empty]=slot; save.active=empty; writeSave(); closeScrim();
+      sfx("good"); toast(card.g.name+" moves in. Say hello."); refresh();
+    }catch(e){ toast("Could not read that file."); }
+  };
+  r.readAsText(file);
+}
+
+/* ---------- scrim + toast ---------- */
+function showScrim(){ scrim.classList.add("show"); }
+function closeScrim(){ scrim.classList.remove("show"); panel.innerHTML=""; }
+scrim.addEventListener("click",function(e){ if(e.target===scrim) closeScrim(); });
+document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeScrim(); });
+
+var toastT=null;
+function toast(msg){
+  var t=document.getElementById("toast");
+  if(!t){ t=document.createElement("div"); t.id="toast"; t.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#07140c;color:#9fe6a6;border:1px solid #103019;padding:8px 14px;border-radius:4px;font:12px/1.3 'Courier New',monospace;z-index:60;max-width:84%;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.5)"; document.body.appendChild(t); }
+  t.textContent=msg; t.style.opacity="1";
+  clearTimeout(toastT); toastT=setTimeout(function(){ t.style.opacity="0"; t.style.transition="opacity .4s"; },2200);
+}
+
+/* ---------- tank interaction (hatch egg on tap) ---------- */
+cv.addEventListener("click",function(e){
+  var v=activeViv(); if(!v) return;
+  if(v.slot.egg){ v.slot.egg=false; v.s.lastTick=now(); delete sprites[v.g.id]; sfx("good"); toast(v.g.name+" hatched."); after(v); }
+});
+
+/* ---------- top buttons ---------- */
+document.getElementById("muteBtn").onclick=function(){
+  save.muted=!save.muted; this.textContent=save.muted?"SND OFF":"SND ON"; writeSave(); if(!save.muted) sfx();
+};
+document.getElementById("menuBtn").onclick=openMenu;
+document.getElementById("wxBtn").onclick=wxToggle;
+
+/* ---------- boot ---------- */
+function boot(){
+  loadSave();
+  catchUp();
+  document.getElementById("muteBtn").textContent=save.muted?"SND OFF":"SND ON";
+  wxLoad(); wxUpdateChip();
+  if(WX.on && WX.lat!=null && WX.lon!=null) wxFetch();
+  setInterval(function(){ if(WX.on && WX.lat!=null) wxFetch(); }, 900000);
+  window.addEventListener("focus",function(){ if(WX.on && WX.lat!=null && now()-WX.at>1200000) wxFetch(); });
+  /* if completely empty, queue a first hatch prompt */
+  fitCanvas();
+  refresh();
+  requestAnimationFrame(drawScene);
+  /* steady tick every 4s for live decay while open */
+  setInterval(function(){
+    var t=now();
+    for(var i=0;i<3;i++){ var slot=save.slots[i]; if(!slot) continue; var dt=(t-(slot.s.lastTick||t))/1000; if(dt>0) tickViv(slot,dt); slot.s.lastTick=t; }
+    if(activeViv() && activeViv().s.calling) { /* gentle nudge */ }
+    writeSave(); refresh();
+  },4000);
+  /* speech refresh */
+  setInterval(function(){ var v=activeViv(); if(v && !v.slot.egg){ var u=utter(v); speechEl.innerHTML=u.glyph?'<span class="glyph">'+escapeHtml(u.text)+'</span>':escapeHtml(u.text);} },5000);
+
+  var anyViv=save.slots.some(function(s){return s;});
+  if(!anyViv){ openHatch(); }
+}
+window.addEventListener("load",function(){ setTimeout(fitCanvas,30); });
+boot();
+
+})();
+</script>
+</body>
+</html>
