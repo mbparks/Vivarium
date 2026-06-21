@@ -136,8 +136,10 @@
     background:var(--btn);color:var(--label);
     font-family:inherit;font-size:10px;letter-spacing:1px;
     padding:7px 4px;border-radius:3px;cursor:pointer;text-align:center;
-    box-shadow:inset 0 1px 0 #34291f;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+    box-shadow:inset 0 1px 0 #34291f;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;position:relative;
   }
+  .tab .calldot{position:absolute;top:4px;right:5px;width:6px;height:6px;border-radius:50%;background:#ffcf5a;box-shadow:0 0 5px rgba(255,207,90,.9);animation:callpulse 1.1s ease-in-out infinite}
+  @keyframes callpulse{0%,100%{opacity:.5;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
   .tab .n{color:var(--ivory);font-size:11px}
   .tab.active{border-color:var(--brass);color:var(--brass-hi);background:#2f2619}
   .tab.active .n{color:var(--brass-hi)}
@@ -160,31 +162,31 @@
   }
   .speech .glyph{font-family:"Courier New",monospace}
   .meta{display:flex;justify-content:space-between;color:var(--crt-dim);font-size:9px;letter-spacing:1px;margin-top:5px}
-  .gauges{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px}
-  .gauge{display:flex;flex-direction:column;gap:3px}
-  .gauge .lab{font-size:8px;letter-spacing:1px;color:var(--crt-dim);text-align:center}
-  .bar{height:8px;background:#0c1f12;border:1px solid #103019;border-radius:1px;overflow:hidden}
+  .gauges{display:grid;grid-template-columns:repeat(5,1fr);gap:clamp(4px,1.5vw,7px);margin-top:10px}
+  .gauge{display:flex;flex-direction:column;gap:clamp(3px,1vw,5px)}
+  .gauge .lab{font-size:clamp(9px,2.6vw,12px);letter-spacing:.5px;color:var(--crt-dim);text-align:center}
+  .bar{height:clamp(10px,2.8vw,14px);background:#0c1f12;border:1px solid #103019;border-radius:2px;overflow:hidden}
   .bar i{display:block;height:100%;background:var(--crt);width:50%}
   .bar.lo i{background:var(--warn)}
 
   /* Controls */
   .controls{
-    display:grid;grid-template-columns:repeat(4,1fr);gap:6px;
-    padding:0 10px 12px;
+    display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
+    padding:0 10px 14px;
   }
   .btn{
     appearance:none;border:1px solid var(--btn-edge);
     background:linear-gradient(180deg,var(--btn-hi),var(--btn));
-    color:var(--ivory);font-family:inherit;font-size:10px;letter-spacing:1px;
-    padding:11px 4px 9px;border-radius:4px;cursor:pointer;
+    color:var(--ivory);font-family:inherit;font-size:clamp(12px,3.4vw,16px);letter-spacing:.5px;
+    padding:clamp(13px,3.6vw,20px) 4px clamp(11px,3vw,16px);border-radius:4px;cursor:pointer;
     box-shadow:inset 0 1px 0 #463a2b, 0 2px 0 var(--btn-edge);
-    display:flex;flex-direction:column;align-items:center;gap:4px;
+    display:flex;flex-direction:column;align-items:center;gap:clamp(4px,1.4vw,7px);
     transition:transform .04s;
   }
   .btn:active{transform:translateY(2px);box-shadow:inset 0 1px 0 #463a2b,0 0 0 var(--btn-edge)}
   .btn:hover{background:linear-gradient(180deg,#473a2b,#2f271d)}
   .btn:focus-visible{outline:2px solid var(--brass);outline-offset:1px}
-  .btn .ic{font-size:16px;line-height:1}
+  .btn .ic{font-size:clamp(18px,5vw,26px);line-height:1}
   .btn[disabled]{opacity:.4;cursor:not-allowed}
 
   /* Modal */
@@ -197,6 +199,7 @@
     width:100%;max-width:340px;background:linear-gradient(180deg,var(--case-hi),var(--case));
     border:2px solid var(--btn-edge);border-radius:6px;padding:16px;
     box-shadow:0 8px 30px rgba(0,0,0,.6), inset 0 1px 0 #3a3024;
+    max-height:100%;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
   }
   .panel h2{margin:0 0 4px;font-size:13px;letter-spacing:2px;color:var(--brass-hi)}
   .panel p{margin:0 0 12px;font-size:11px;line-height:1.5;color:var(--label)}
@@ -223,12 +226,12 @@
   .hidden{display:none !important}
 
   @media (max-width:380px){
-    .btn{font-size:9px;padding:9px 2px 8px}
-    .btn .ic{font-size:15px}
+    .btn{letter-spacing:0;padding-left:2px;padding-right:2px}
     .plate .name{font-size:13px;letter-spacing:4px}
   }
   @media (prefers-reduced-motion:reduce){
     .calltag{animation:none}
+    .tab .calldot{animation:none}
   }
 </style>
 </head>
@@ -319,6 +322,192 @@ function makePalette(rng){
   };
 }
 
+/* ---------- QR encoder (byte mode, level L, versions 1-5; hand-rolled) ---------- */
+/* Minimal QR encoder: byte mode, error level L, versions 1-5 (single data block).
+   Enough to hold a deep-link URL (~up to 106 bytes). Returns a square boolean
+   matrix (true = dark module). Hand-rolled, no dependencies. */
+var QR=(function(){
+  /* GF(256) tables, primitive 0x11d */
+  var EXP=new Array(512), LOG=new Array(256);
+  (function(){ var x=1; for(var i=0;i<255;i++){ EXP[i]=x; LOG[x]=i; x<<=1; if(x&0x100) x^=0x11d; } for(var i=255;i<512;i++) EXP[i]=EXP[i-255]; })();
+  function gmul(a,b){ return (a===0||b===0)?0:EXP[LOG[a]+LOG[b]]; }
+  /* Reed-Solomon divisor (generator coefficients, low order), length = degree */
+  function rsDivisor(degree){
+    var result=new Array(degree).fill(0); result[degree-1]=1; var root=1;
+    for(var i=0;i<degree;i++){
+      for(var j=0;j<result.length;j++){ result[j]=gmul(result[j],root); if(j+1<result.length) result[j]^=result[j+1]; }
+      root=gmul(root,2);
+    }
+    return result;
+  }
+  function rsRemainder(data, divisor){
+    var result=new Array(divisor.length).fill(0);
+    for(var k=0;k<data.length;k++){
+      var factor=data[k]^result.shift(); result.push(0);
+      for(var i=0;i<result.length;i++) result[i]^=gmul(divisor[i],factor);
+    }
+    return result;
+  }
+  /* version table, level L: size, EC codewords, data codewords, alignment centers */
+  var VERS={
+    1:{size:21, ec:7,  data:19,  align:[]},
+    2:{size:25, ec:10, data:34,  align:[6,18]},
+    3:{size:29, ec:15, data:55,  align:[6,22]},
+    4:{size:33, ec:20, data:80,  align:[6,26]},
+    5:{size:37, ec:26, data:108, align:[6,30]}
+  };
+  function pickVersion(n){ /* n = byte length */
+    for(var v=1;v<=5;v++){ if(n <= VERS[v].data-2) return v; } /* -2 for mode+count overhead */
+    return 0;
+  }
+  function makeCodewords(bytes, ver){
+    var V=VERS[ver], bits=[];
+    function push(val,len){ for(var i=len-1;i>=0;i--) bits.push((val>>i)&1); }
+    push(4,4); push(bytes.length,8);
+    for(var i=0;i<bytes.length;i++) push(bytes[i],8);
+    var cap=V.data*8;
+    push(0, Math.min(4, cap-bits.length));
+    while(bits.length%8!==0) bits.push(0);
+    var pads=[0xEC,0x11], pi=0;
+    while(bits.length<cap){ push(pads[pi&1],8); pi++; }
+    var cw=[]; for(var i=0;i<bits.length;i+=8){ var b=0; for(var j=0;j<8;j++) b=(b<<1)|bits[i+j]; cw.push(b); }
+    var ec=rsRemainder(cw, rsDivisor(V.ec));
+    return cw.concat(ec);
+  }
+  /* matrix helpers */
+  function blank(size){ var m=[],r,c; for(r=0;r<size;r++){ m[r]=[]; for(c=0;c<size;c++) m[r][c]=null; } return m; }
+  function setFinder(m,res,r,c){
+    for(var dr=-1;dr<=7;dr++) for(var dc=-1;dc<=7;dc++){
+      var rr=r+dr, cc=c+dc; if(rr<0||cc<0||rr>=m.length||cc>=m.length) continue;
+      var dark=(dr>=0&&dr<=6&&(dc===0||dc===6)) || (dc>=0&&dc<=6&&(dr===0||dr===6)) || (dr>=2&&dr<=4&&dc>=2&&dc<=4);
+      m[rr][cc]=dark; res[rr][cc]=true;
+    }
+  }
+  function setAlign(m,res,r,c){
+    for(var dr=-2;dr<=2;dr++) for(var dc=-2;dc<=2;dc++){
+      var dark=Math.max(Math.abs(dr),Math.abs(dc))!==1;
+      m[r+dr][c+dc]=dark; res[r+dr][c+dc]=true;
+    }
+  }
+  function buildFunctions(ver){
+    var V=VERS[ver], size=V.size, m=blank(size), res=blank(size);
+    for(var r=0;r<size;r++) for(var c=0;c<size;c++) res[r][c]=false;
+    setFinder(m,res,0,0); setFinder(m,res,0,size-7); setFinder(m,res,size-7,0);
+    /* timing */
+    for(var i=8;i<size-8;i++){ var v=(i%2===0); if(m[6][i]===null){m[6][i]=v;res[6][i]=true;} if(m[i][6]===null){m[i][6]=v;res[i][6]=true;} }
+    /* alignment */
+    var a=V.align;
+    for(var ai=0;ai<a.length;ai++) for(var aj=0;aj<a.length;aj++){
+      var rr=a[ai], cc=a[aj];
+      if((rr<=7&&cc<=7)||(rr<=7&&cc>=size-8)||(rr>=size-8&&cc<=7)) continue; /* overlaps finder */
+      setAlign(m,res,rr,cc);
+    }
+    /* dark module */
+    m[size-8][8]=true; res[size-8][8]=true;
+    /* reserve format info areas */
+    for(var k=0;k<9;k++){ if(m[8][k]===null){res[8][k]=true;} if(m[k][8]===null){res[k][8]=true;} }
+    for(var k=0;k<8;k++){ res[8][size-1-k]=true; res[size-1-k][8]=true; }
+    return {m:m,res:res,size:size};
+  }
+  function placeData(m,res,codewords){
+    var size=m.length, bits=[];
+    for(var i=0;i<codewords.length;i++) for(var b=7;b>=0;b--) bits.push((codewords[i]>>b)&1);
+    var idx=0, upward=true;
+    for(var col=size-1; col>0; col-=2){
+      if(col===6) col--; /* skip timing column */
+      for(var t=0;t<size;t++){
+        var row = upward ? (size-1-t) : t;
+        for(var x=0;x<2;x++){
+          var cc=col-x;
+          if(res[row][cc]) continue;
+          m[row][cc]= idx<bits.length ? (bits[idx++]===1) : false;
+        }
+      }
+      upward=!upward;
+    }
+  }
+  function maskFn(k,r,c){
+    switch(k){
+      case 0: return (r+c)%2===0;
+      case 1: return r%2===0;
+      case 2: return c%3===0;
+      case 3: return (r+c)%3===0;
+      case 4: return (Math.floor(r/2)+Math.floor(c/3))%2===0;
+      case 5: return ((r*c)%2)+((r*c)%3)===0;
+      case 6: return (((r*c)%2)+((r*c)%3))%2===0;
+      case 7: return (((r+c)%2)+((r*c)%3))%2===0;
+    }
+  }
+  function applyMask(m,res,k){
+    var size=m.length, out=[];
+    for(var r=0;r<size;r++){ out[r]=[]; for(var c=0;c<size;c++){ out[r][c]= res[r][c] ? m[r][c] : (m[r][c]^maskFn(k,r,c) ? true:false); } }
+    return out;
+  }
+  function fmtBits(ec, mask){ /* ec L=01; returns 15-bit format info as array (MSB first) */
+    var data=((ec<<3)|mask)&0x1f;
+    var rem=data;
+    for(var i=0;i<10;i++) rem=(rem<<1)^(((rem>>9)&1)*0x537);
+    var bits=((data<<10)|(rem&0x3ff))^0x5412;
+    var arr=[]; for(var i=14;i>=0;i--) arr.push((bits>>i)&1);
+    return arr;
+  }
+  function placeFormat(m,size,bits){
+    /* bits[0..14] MSB..LSB per spec ordering */
+    for(var i=0;i<=5;i++) m[8][i]=bits[i]===1;
+    m[8][7]=bits[6]===1; m[8][8]=bits[7]===1; m[7][8]=bits[8]===1;
+    for(var i=9;i<15;i++) m[14-i][8]=bits[i]===1;
+    for(var i=0;i<=7;i++) m[size-1-i][8]=bits[i]===1;
+    for(var i=8;i<15;i++) m[8][size-15+i]=bits[i]===1;
+    m[size-8][8]=true; /* dark module stays */
+  }
+  function penalty(m){
+    var size=m.length, p=0, r,c;
+    /* rule1: runs >=5 in rows and cols */
+    for(r=0;r<size;r++){ var run=1; for(c=1;c<size;c++){ if(m[r][c]===m[r][c-1]) run++; else { if(run>=5)p+=3+(run-5); run=1; } } if(run>=5)p+=3+(run-5); }
+    for(c=0;c<size;c++){ var run=1; for(r=1;r<size;r++){ if(m[r][c]===m[r-1][c]) run++; else { if(run>=5)p+=3+(run-5); run=1; } } if(run>=5)p+=3+(run-5); }
+    /* rule2: 2x2 blocks */
+    for(r=0;r<size-1;r++) for(c=0;c<size-1;c++){ var v=m[r][c]; if(v===m[r][c+1]&&v===m[r+1][c]&&v===m[r+1][c+1]) p+=3; }
+    /* rule3: finder-like patterns 1:1:3:1:1 with 4 light */
+    var pat1=[true,false,true,true,true,false,true,false,false,false,false];
+    var pat2=[false,false,false,false,true,false,true,true,true,false,true];
+    function lineHas(arr){ var hits=0; for(var i=0;i+11<=arr.length;i++){ var ok1=true,ok2=true; for(var j=0;j<11;j++){ if(arr[i+j]!==pat1[j])ok1=false; if(arr[i+j]!==pat2[j])ok2=false; } if(ok1||ok2)hits++; } return hits; }
+    for(r=0;r<size;r++){ p+=40*lineHas(m[r]); }
+    for(c=0;c<size;c++){ var col=[]; for(r=0;r<size;r++) col.push(m[r][c]); p+=40*lineHas(col); }
+    /* rule4: dark ratio */
+    var dark=0; for(r=0;r<size;r++) for(c=0;c<size;c++) if(m[r][c]) dark++;
+    var ratio=dark/(size*size)*100; var k=Math.floor(Math.abs(ratio-50)/5); p+=k*10;
+    return p;
+  }
+  function encode(str){
+    var bytes=[]; for(var i=0;i<str.length;i++){ var cp=str.charCodeAt(i); if(cp<128) bytes.push(cp); else { /* utf-8 */ var e=encodeURIComponent(str); bytes=[]; for(var j=0;j<e.length;j++){ if(e[j]==='%'){ bytes.push(parseInt(e.substr(j+1,2),16)); j+=2; } else bytes.push(e.charCodeAt(j)); } break; } }
+    var ver=pickVersion(bytes.length);
+    if(!ver) throw new Error("payload too large for v1-5 ("+bytes.length+" bytes)");
+    var cw=makeCodewords(bytes, ver);
+    var base=buildFunctions(ver);
+    placeData(base.m, base.res, cw);
+    var best=null, bestP=1e9, bestK=0, bestMat=null;
+    for(var k=0;k<8;k++){
+      var masked=applyMask(base.m, base.res, k);
+      placeFormat(masked, base.size, fmtBits(1,k));
+      var pp=penalty(masked);
+      if(pp<bestP){ bestP=pp; bestK=k; bestMat=masked; }
+    }
+    return {size:base.size, version:ver, mask:bestK, modules:bestMat};
+  }
+  return { encode:encode, pickVersion:pickVersion, VERS:VERS };
+})();
+
+function drawQR(ctx, str, px, quiet){
+  quiet=(quiet==null)?4:quiet;
+  var r; try{ r=QR.encode(str); }catch(e){ return false; }
+  var n=r.size, cells=n+quiet*2, scale=Math.max(1, Math.floor(px/cells)), W=cells*scale;
+  ctx.canvas.width=W; ctx.canvas.height=W;
+  ctx.fillStyle="#f4efe2"; ctx.fillRect(0,0,W,W);
+  ctx.fillStyle="#15110c";
+  for(var y=0;y<n;y++) for(var x=0;x<n;x++) if(r.modules[y][x]) ctx.fillRect((x+quiet)*scale,(y+quiet)*scale,scale,scale);
+  return true;
+}
+
 function makeGenome(seedStr, loco){
   var seed=hashStr(seedStr||uid());
   var rng=mulberry32(seed);
@@ -341,14 +530,34 @@ function makeGenome(seedStr, loco){
     born:now()
   };
 }
+/* ---------- visit tokens (compact, for the QR deep link) ---------- */
+var VISIT_MS=5*60*1000, GUEST_MS=10*60*1000;
+function visitToken(g){
+  var li=LOCOS.indexOf(g.loco); if(li<0) li=1;
+  var gn=g.genes, genes=""+gn.body+gn.eyes+gn.eyeShape+gn.pattern+gn.crest+gn.limbs;
+  return "V1."+(g.seed>>>0).toString(36)+"."+li+"."+(g.born||now()).toString(36)+"."+genes;
+}
+function parseVisit(str){
+  if(!str) return null;
+  var p=String(str).split("."); if(p.length!==5||p[0]!=="V1") return null;
+  var seed=parseInt(p[1],36), li=parseInt(p[2],10), born=parseInt(p[3],36), gd=p[4];
+  if(!isFinite(seed)||!isFinite(born)||!/^\d{6}$/.test(gd)) return null;
+  return { seed:seed>>>0, loco:LOCOS[li]||"land", born:born,
+           genes:{ body:+gd[0], eyes:+gd[1], eyeShape:+gd[2], pattern:+gd[3], crest:+gd[4], limbs:+gd[5] } };
+}
+function genomeFromToken(t){
+  var rng=mulberry32(t.seed>>>0), pal=makePalette(rng), name=pick(rng,NAMES);
+  return { v:1, id:uid(), name:name, loco:t.loco, seed:t.seed>>>0, genes:t.genes, palette:pal, born:t.born };
+}
+function visitLink(g){ return location.origin+location.pathname+"#v="+visitToken(g); }
 
 function freshState(){
   return {
     fullness:78, happy:72, energy:80, health:100, weight:50,
     discipline:50, bond:6,
-    asleep:false, lightsOn:true, sick:false, doses:0,
+    asleep:false, sick:false, doses:0,
     calling:false, callKind:null, callSince:0,
-    poops:[], lastTick:now(), log:[], langTier:0, learned:[],
+    lastTick:now(), log:[], langTier:0, learned:[], taught:{},
     tally:{meal:0,snack:0,playWin:0,playLose:0,clean:0,meds:0,scoldGood:0,scoldBad:0,talk:0}
   };
 }
@@ -362,7 +571,7 @@ function rampColor(stops,t){var n=stops.length-1,f=clamp(t,0,1)*n,i=Math.floor(f
 
 /* ---------- the save (up to 3 slots) ---------- */
 var SAVE_KEY="vivarium_save_v1";
-var APP_VERSION="0.1.0";          /* bump on release */
+var APP_VERSION="0.6.4";          /* bump on release */
 var APP_BUILD="2026-06-21";       /* build date */
 var SCHEMA=2;                     /* save-format version, grown for props/curios/diary/learned */
 var save={slots:[null,null,null], active:0, muted:false};
@@ -376,7 +585,16 @@ function migrateSave(){
   if(!Array.isArray(save.curios)) save.curios=[];
   if(!Array.isArray(save.tankCurios)) save.tankCurios=[];
   if(!Array.isArray(save.diary)) save.diary=[];
+  if(!save.affinity || typeof save.affinity!=="object") save.affinity={};
+  if(!save.affMile || typeof save.affMile!=="object") save.affMile={};
+  if(!Array.isArray(save.blooms)) save.blooms=[];
+  if(!save.sharedWords || typeof save.sharedWords!=="object") save.sharedWords={};
+  if(typeof save.lightsOn!=="boolean"){ var _av=save.slots[save.active]; save.lightsOn = !(_av && _av.s && _av.s.lightsOn===false); }
+  if(!Array.isArray(save.poops)){ save.poops=[]; for(var _pi=0;_pi<3;_pi++){ var _ps=save.slots[_pi]; if(_ps&&_ps.s&&Array.isArray(_ps.s.poops)){ for(var _q=0;_q<_ps.s.poops.length&&save.poops.length<6;_q++) save.poops.push(_ps.s.poops[_q]); } } }
+  for(var si=0;si<3;si++){ var sl=save.slots[si]; if(sl && sl.s && (!sl.s.taught || typeof sl.s.taught!=="object")) sl.s.taught={}; }
 }
+var DIARY_MAX=40;
+function logDiary(text){ if(!Array.isArray(save.diary)) save.diary=[]; save.diary.unshift({text:text, at:now()}); while(save.diary.length>DIARY_MAX) save.diary.pop(); }
 function loadSave(){
   try{
     var raw=localStorage.getItem(SAVE_KEY);
@@ -413,18 +631,21 @@ function wrap(slot){return {g:slot.g, s:slot.s, slot:slot};}
 function tickViv(slot, dtSec){
   var s=slot.s;
   if(slot.s.egg) return;
+  if(slot.s.visitUntil && now()<slot.s.visitUntil) return;
   var mins=dtSec/60;
+  /* lights are the sleep switch: off means asleep (recharging), on means awake */
+  s.asleep = !save.lightsOn;
   /* fullness falls, faster when awake */
   var fr=s.asleep?0.18:0.5;
   s.fullness=clamp(s.fullness - fr*mins, 0, 100);
   /* energy: recovers asleep with lights off, drains awake */
-  if(s.asleep && !s.lightsOn) s.energy=clamp(s.energy + 0.9*mins,0,100);
+  if(s.asleep) s.energy=clamp(s.energy + 0.9*mins,0,100);
   else s.energy=clamp(s.energy - 0.25*mins,0,100);
   /* poop: small chance per minute while awake and fed */
   if(!s.asleep && s.fullness>15){
     var pk=1-Math.pow(1-0.06, Math.min(mins,240));
-    if(Math.random()<pk && s.poops.length<6){
-      s.poops.push({x:30+Math.floor(Math.random()*196), id:uid()});
+    if(Math.random()<pk && save.poops.length<6){
+      save.poops.push({x:30+Math.floor(Math.random()*196), id:uid()});
     }
   }
   /* the Viv sometimes leaves a curio behind */
@@ -433,7 +654,7 @@ function tickViv(slot, dtSec){
     if(Math.random()<ck) spawnCurio();
   }
   /* cleanliness drives sickness */
-  var dirty=s.poops.length;
+  var dirty=save.poops.length;
   if(dirty>=3 && !s.sick){
     var sk=1-Math.pow(1-0.02*(dirty-2), Math.min(mins,240));
     if(Math.random()<sk){ s.sick=true; s.doses=1+(Math.random()<0.4?1:0); }
@@ -451,7 +672,7 @@ function tickViv(slot, dtSec){
   if(dirty>=2) target-=12;
   if(s.sick) target-=25;
   if(s.energy<20) target-=12;
-  if(s.lightsOn && isNight()) target-=14;
+  if(save.lightsOn && isNight()) target-=14;
   if(WX.on && WX.code!=null){
     if(WX.kind==="clear" && WX.isDay) target+=5;
     else if(WX.kind==="storm") target-=5;
@@ -471,12 +692,14 @@ function tickViv(slot, dtSec){
       s.callKind = (realNeed && Math.random()>naughtyChance) ? "need" : "naughty";
     }
   }
-  /* sleep state from clock and lights */
-  if(isNight() && !s.lightsOn) s.asleep=true;
-  else if(!isNight()) s.asleep=false;
 }
 
 function isNight(){var h=new Date().getHours();return h>=21 || h<6;}
+function isDark(){
+  var manual=(save.lightsOn===false);
+  if(WX.on && WX.code!=null) return manual || !WX.isDay;
+  return manual || isNight();
+}
 
 /* ---------- weather (Open-Meteo, no key; the tank reacts to your real sky) ---------- */
 var WX={on:false, code:null, temp:null, isDay:1, wind:0, kind:null, at:0, lat:null, lon:null, status:"off", flash:0, nextFlash:5};
@@ -631,8 +854,7 @@ function maybeAwayLog(gapMs, newCurios){
   var v=activeViv(); if(!v || v.slot.egg) return;
   var text=awayStory(v, gapMs, newCurios);
   save.pendingAway=text;
-  if(!Array.isArray(save.diary)) save.diary=[];
-  save.diary.unshift({text:text, at:now()}); if(save.diary.length>14) save.diary.pop();
+  logDiary(text);
   writeSave();
 }
 function relTime(ts){ var d=(now()-ts)/3600000; if(d<1)return "just now"; if(d<24)return Math.round(d)+"h ago"; return Math.round(d/24)+"d ago"; }
@@ -645,8 +867,15 @@ function openDiary(){
 function openCard(v){
   var g=v.g, s=v.s, lex=vivLex(g), T=tallyOf(s), st=stageOf(v), days=Math.max(0,Math.floor(ageDays(v)));
   var learned=(s.learned||[]).slice();
+  var friends=[]; for(var fi=0;fi<3;fi++){ var os=save.slots[fi]; if(os&&!os.s.egg&&os.g.id!==g.id){ var af=getAff(g.id,os.g.id); if(af>=45) friends.push({name:os.g.name, af:af}); } }
+  friends.sort(function(a,b){return b.af-a.af;});
+  var friendLine = friends.length ? '<div style="color:var(--brass)">'+(friends[0].af>=60?"close to ":"friendly with ")+escapeHtml(friends.map(function(f){return f.name;}).join(", "))+'</div>' : '';
+  var loan=[], tg=s.taught||{};
+  for(var lc in tg){ loan.push({word:tg[lc].w, mean:cleanMean(lc), tag:"from "+tg[lc].name}); }
+  var shr=sharedWordsFor(g.id); for(var sx=0;sx<shr.length;sx++){ loan.push({word:shr[sx].word, mean:cleanMean(shr[sx].con), tag:"with "+shr[sx].withName}); }
+  var loanHtml = loan.length ? ('<h3 style="margin:12px 0 4px;font-size:11px;letter-spacing:1px;color:var(--brass)">WORDS FROM FRIENDS</h3><div style="display:grid;gap:2px;font-size:12px">'+ loan.map(function(L){ return glossRow(L.word, escapeHtml(L.mean)+' <span style="opacity:.7">('+escapeHtml(L.tag)+')</span>'); }).join('') +'</div>') : '';
   var gloss = learned.length
-    ? learned.map(function(c){ return '<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #1c1a16;padding:1px 0"><span class="glyph" style="color:var(--brass-hi)">'+escapeHtml(lex[c])+'</span><span style="color:var(--crt-dim)">'+escapeHtml((REAL[c]||c).replace(/^i /,"").replace(/ please$/,""))+'</span></div>'; }).join('')
+    ? learned.map(function(c){ return glossRow(lex[c], escapeHtml(cleanMean(c))); }).join('')
     : '<p style="color:var(--crt-dim)">No words decoded yet. Talk with '+escapeHtml(g.name)+' as your bond deepens.</p>';
   var body=
     '<div style="display:flex;gap:10px;align-items:center">'+
@@ -656,10 +885,12 @@ function openCard(v){
         '<div style="color:var(--crt-dim)">'+st+' . '+escapeHtml(g.loco)+' . '+escapeHtml(temperamentOf(g))+'</div>'+
         '<div style="color:var(--crt-dim)">'+days+' day'+(days===1?"":"s")+' together</div>'+
         '<div style="color:var(--crt-dim)">bond '+Math.round(s.bond)+'</div>'+
+        friendLine+
       '</div>'+
     '</div>'+
     '<h3 style="margin:12px 0 4px;font-size:11px;letter-spacing:1px;color:var(--brass)">GLOSSARY ('+learned.length+' of '+CONCEPTS.length+')</h3>'+
     '<div style="display:grid;gap:2px;font-size:12px">'+gloss+'</div>'+
+    loanHtml+
     '<h3 style="margin:12px 0 4px;font-size:11px;letter-spacing:1px;color:var(--brass)">HISTORY</h3>'+
     '<div style="color:var(--crt-dim);font-size:12px;line-height:1.6">meals '+T.meal+' . snacks '+T.snack+' . play '+(T.playWin+T.playLose)+' . tidied '+T.clean+' . talks '+T.talk+'</div>';
   openPanel("FIELD CARD", body, function(){
@@ -793,9 +1024,9 @@ function vivLex(g){ return _lexCache[g.id]||(_lexCache[g.id]=lexFor(g)); }
 
 function conceptOf(s){
   if(s.sick) return "sick";
-  if(s.poops.length>=2) return "clean";
+  if(save.poops.length>=2) return "clean";
   if(s.fullness<30) return "food";
-  if(s.energy<22 && isNight()) return "sleep";
+  if(s.energy<22 && save.lightsOn) return "sleep";
   if(s.calling) return s.callKind==="need"?"food":"look";
   if(s.happy<40) return "play";
   if(s.happy>78) return "happy";
@@ -975,7 +1206,7 @@ function drawProp(prop){
   var x=Math.round(clamp((prop.fx||0.5)*W,10,W-10)), y=propBaseY(def);
   cx.save(); cx.translate(x,y); cx.scale(vivScale,vivScale); paintArt(PROP_ART[prop.type]); cx.restore();
   if(prop.type==="lamp"){
-    var nightL=(WX.on&&WX.code!=null)? !WX.isDay : isNight();
+    var nightL=isDark();
     if(nightL){ var gg=cx.createRadialGradient(x,y-16*vivScale,2,x,y-16*vivScale,40*vivScale); gg.addColorStop(0,"rgba(255,236,150,0.28)"); gg.addColorStop(1,"rgba(255,236,150,0)"); cx.fillStyle=gg; cx.fillRect(x-44*vivScale,y-42*vivScale,88*vivScale,48*vivScale); }
   }
   if(prop.type==="radio"){
@@ -1020,7 +1251,9 @@ var CURIO_ART={
 function drawCurioIcon(type,x,y,s){ cx.save(); cx.translate(x,y); cx.scale(s,s); paintArt(CURIO_ART[type]); cx.restore(); }
 function drawTankCurios(){
   for(var i=0;i<save.tankCurios.length;i++){
-    var c=save.tankCurios[i], x=Math.round(clamp((c.fx||0.5)*W,10,W-10)), y=bands.landY+10;
+    var c=save.tankCurios[i], x=Math.round(clamp((c.fx||0.5)*W,10,W-10)), hop=0;
+    if(c.hop>0){ c.hop=Math.max(0,c.hop-0.03); hop=Math.sin((0.4-c.hop)/0.4*Math.PI)*5; }
+    var y=bands.landY+10-hop;
     drawCurioIcon(c.type,x,y,vivScale);
     var tw=0.4+0.6*Math.sin(anim*5+i);
     cx.fillStyle="rgba(255,250,210,"+tw+")"; cx.fillRect(x+((3*vivScale)|0), y-((6*vivScale)|0),1,1);
@@ -1031,7 +1264,7 @@ function collectCurio(idx){
   var cu=save.tankCurios[idx]; if(!cu) return;
   save.tankCurios.splice(idx,1);
   save.curios.push({type:cu.type, at:now()}); if(save.curios.length>80) save.curios.shift();
-  var v=activeViv(); if(v) v.s.happy=clamp(v.s.happy+2,0,100);
+  var pl=presentSlots(); for(var i=0;i<pl.length;i++) pl[i].s.happy=clamp(pl[i].s.happy+2,0,100);
   sfx("good"); toast("You found "+((CURIO_DEFS[cu.type]||{}).label||"a curio")+".");
   writeSave();
 }
@@ -1118,7 +1351,7 @@ var star=null;
 function maybeSpawnStar(night,wk){ if(star||!night||(wk&&wk!=="clear"&&wk!=="cloud")) return; if(Math.random()<0.0011){ star={x:W*(0.08+Math.random()*0.5), y:bands.landY*(0.08+Math.random()*0.22), vx:46+Math.random()*36, vy:22+Math.random()*14, t0:now(), life:1.7}; } }
 function drawStar(dt){ if(!star) return; var e=(now()-star.t0)/1000; if(e>star.life){ star=null; return; } star.x+=star.vx*dt; star.y+=star.vy*dt; var a=Math.max(0,1-e/star.life);
   cx.save(); cx.globalCompositeOperation="lighter"; for(var k=0;k<6;k++){ var tx=star.x-star.vx*0.012*k, ty=star.y-star.vy*0.012*k; cx.fillStyle="rgba(255,250,220,"+(a*(1-k/6))+")"; cx.fillRect(tx|0,ty|0,2,2); } cx.restore(); }
-function wishOnStar(){ star=null; var v=activeViv(); if(v){ v.s.happy=clamp(v.s.happy+4,0,100); v.s.bond=clamp(v.s.bond+1,0,100); writeSave(); } sfx("good"); if(typeof navigator!=="undefined"&&navigator.vibrate){try{navigator.vibrate(18);}catch(e){}} toast("You made a wish."); }
+function wishOnStar(){ star=null; var pl=presentSlots(); for(var i=0;i<pl.length;i++){ pl[i].s.happy=clamp(pl[i].s.happy+4,0,100); pl[i].s.bond=clamp(pl[i].s.bond+1,0,100); } if(pl.length) writeSave(); sfx("good"); if(typeof navigator!=="undefined"&&navigator.vibrate){try{navigator.vibrate(18);}catch(e){}} toast("You made a wish."); }
 var wild=null;
 function maybeSpawnWild(night){ if(wild) return; if(Math.random()<0.0006){ var locos=["air","land","water"], lo=locos[Math.floor(Math.random()*3)]; var g=makeGenome("wild"+Math.floor(Math.random()*1e6), lo); var dir=Math.random()<0.5?1:-1; var by=baseYFor(lo); wild={slot:{g:g, s:freshState()}, sp:{x:dir>0?-20:W+20, y:by, baseY:by, dir:dir, ph:Math.random()*6.28, tx:0, hop:0}, dropped:false}; } }
 function updateWild(dt){ if(!wild) return; var sp=wild.sp, lo=wild.slot.g.loco; sp.ph+=dt; sp.x+=sp.dir*16*dt;
@@ -1128,6 +1361,484 @@ function updateWild(dt){ if(!wild) return; var sp=wild.sp, lo=wild.slot.g.loco; 
 }
 
 function baseYFor(loco){ return loco==="air"?52 : loco==="water"?(Math.round((bands.waterY+H)/2)-2) : (bands.landY+2); }
+/* ---------- one-way playdate: send a copy, it returns in 5 minutes with a gift ---------- */
+function isVisiting(slot){ return !!(slot && slot.s.visitUntil && now()<slot.s.visitUntil); }
+function visitGuard(v){ if(v && isVisiting(v.slot)){ toast(v.g.name+" is out visiting."); return true; } return false; }
+function returnHome(slot, live){
+  var s=slot.s; if(!s.visitUntil) return;
+  s.visitUntil=0; s.lastTick=now();
+  s.happy=clamp(s.happy+6,0,100); s.bond=clamp(s.bond+2,0,100);
+  var ct=CURIO_KEYS[Math.floor(Math.random()*CURIO_KEYS.length)], gotCurio=false;
+  if(Math.random()<0.85){
+    if(save.tankCurios.length<3){ save.tankCurios.push({type:ct, fx:0.12+Math.random()*0.76, id:uid()}); gotCurio=true; }
+    else { save.curios.push({type:ct, at:now()}); gotCurio=true; }
+  }
+  var line=slot.g.name+" came home from visiting a friend"+(gotCurio? (" with "+((CURIO_DEFS[ct]||{}).label||"a souvenir")+".") : ".");
+  logDiary(line);
+  if(live){ sfx("good"); toast(slot.g.name+" is home!"); refresh(); } else { save.pendingReturn=slot.g.name+" is home from visiting."; }
+  writeSave();
+}
+function checkReturns(live){ for(var i=0;i<3;i++){ var slot=save.slots[i]; if(slot && slot.s.visitUntil && now()>=slot.s.visitUntil) returnHome(slot, live); } }
+function openSend(v){
+  if(!v || v.slot.egg){ toast("Hatch a Viv first."); return; }
+  if(!isVisiting(v.slot)){ v.s.visitUntil=now()+VISIT_MS; writeSave(); refresh(); }
+  var link=visitLink(v.g), token=visitToken(v.g), mins=Math.max(1, Math.ceil((v.s.visitUntil-now())/60000));
+  var body=
+    '<p>Have a friend scan this with their phone camera. '+escapeHtml(v.g.name)+' visits their tank, then comes home in a few minutes with a souvenir.</p>'+
+    '<div style="display:flex;justify-content:center;margin:6px 0"><canvas id="qrCanvas" width="220" height="220" style="width:200px;height:200px;image-rendering:pixelated;border-radius:6px;background:#f4efe2"></canvas></div>'+
+    '<p style="color:var(--crt-dim);font-size:10px;text-align:center;word-break:break-all">or share this code:<br><b style="color:var(--ivory)">'+escapeHtml(token)+'</b></p>'+
+    '<p style="color:var(--crt-dim)">'+escapeHtml(v.g.name)+' is out visiting. Home in about '+mins+' min.</p>'+
+    '<div class="row"><button class="btn" id="callHome">Call them home now</button></div>';
+  openPanel("SEND TO PLAY", body, function(){
+    var c=document.getElementById("qrCanvas"); if(c) drawQR(c.getContext("2d"), link, 220, 4);
+    var ch=document.getElementById("callHome"); if(ch) ch.onclick=function(){ returnHome(v.slot, true); closeScrim(); };
+  });
+}
+/* receiving a visitor (guest copy, consequence free) */
+var guestRT=null;
+function guestActive(){ return !!(save.guest && now()<save.guest.until); }
+function acceptVisitor(pv){ var g=genomeFromToken(pv); save.guest={ g:g, until:now()+GUEST_MS }; guestRT=null; save.pendingVisitor=g.name; writeSave(); }
+function receiveVisitorFromUrl(){
+  try{ var m=(location.hash||"").match(/^#v=(.+)$/);
+    if(m){ var pv=parseVisit(decodeURIComponent(m[1])); if(pv) acceptVisitor(pv);
+      if(history&&history.replaceState) history.replaceState(null,"",location.pathname+location.search);
+    }
+  }catch(e){}
+}
+function ensureGuestRT(){ if(!save.guest){ guestRT=null; return; } if(guestRT && guestRT.slot.g.id===save.guest.g.id) return; var st=freshState(); st.egg=false; guestRT={ slot:{g:save.guest.g, s:st} }; }
+function sayGoodbye(){ if(save.guest){ var n=save.guest.g.name; if(guestRT) delete sprites[save.guest.g.id]; save.guest=null; guestRT=null; writeSave(); refresh(); toast(n+" headed home. Bye!"); } }
+function drawGuestTag(sp){
+  var x=Math.round(sp.x), y=Math.round(sp.y-22*vivScale), a=0.55+0.45*Math.sin(anim*4);
+  cx.fillStyle="rgba(231,194,119,"+a+")";
+  cx.fillRect(x,y-2,2,2); cx.fillRect(x-2,y,2,2); cx.fillRect(x+2,y,2,2); cx.fillRect(x,y+2,2,2);
+}
+function drawAwayMarker(sp){
+  var x=Math.round(sp.x), y=Math.round((sp.baseY!=null?sp.baseY:sp.y));
+  cx.globalAlpha=0.55;
+  cx.fillStyle="#6b5836"; cx.fillRect(x-5,y-6,10,7);
+  cx.fillStyle="#8a7350"; cx.fillRect(x-2,y-9,4,3);
+  cx.fillStyle="#4a3d28"; cx.fillRect(x-5,y-3,10,1);
+  cx.globalAlpha=1;
+}
+
+/* ---------- inter-Viv social: affinity, ambient behaviors, boundary scenes ---------- */
+function pairKey(a,b){ return a<b ? a+"~"+b : b+"~"+a; }
+function getAff(a,b){ return (save.affinity&&save.affinity[pairKey(a,b)])||0; }
+function nameOfId(id){ for(var i=0;i<3;i++){ var s=save.slots[i]; if(s&&s.g.id===id) return s.g.name; } return null; }
+function milestoneFriends(a,b){
+  if(!save.affMile) save.affMile={}; var k=pairKey(a,b); if(save.affMile[k]) return;
+  var na=nameOfId(a), nb=nameOfId(b); if(!na||!nb) return; save.affMile[k]=1;
+  logDiary(na+" and "+nb+" have become close.");
+}
+function addAff(a,b,amt){ if(!save.affinity) save.affinity={}; var k=pairKey(a,b); var was=save.affinity[k]||0, nv=clamp(was+amt,0,100); save.affinity[k]=nv; if(was<60&&nv>=60) milestoneFriends(a,b); }
+function presentSlots(){ var r=[]; for(var i=0;i<3;i++){ var s=save.slots[i]; if(s && !s.s.egg && !isVisiting(s)) r.push(s); } return r; }
+
+var sparkles=[];
+function addSparkle(x,y,hue){ sparkles.push({x:x,y:y,t0:now(),hue:hue||"#e7c277"}); if(sparkles.length>24) sparkles.shift(); }
+function drawSparkles(){
+  for(var i=sparkles.length-1;i>=0;i--){ var s=sparkles[i], e=(now()-s.t0)/700; if(e>=1){ sparkles.splice(i,1); continue; }
+    var r=2+e*7;
+    cx.globalAlpha=(1-e)*0.9; cx.strokeStyle=s.hue; cx.lineWidth=1; cx.beginPath(); cx.arc(s.x,s.y,r,0,6.2832); cx.stroke();
+    cx.fillStyle=s.hue; for(var d=0;d<4;d++){ var ang=e*3+d*1.5708; cx.fillRect(Math.round(s.x+Math.cos(ang)*r), Math.round(s.y+Math.sin(ang)*r),1,1); }
+    cx.globalAlpha=1;
+  }
+}
+
+var boopCool={}, boundary=null, boundaryCool=10;
+function socialPre(dt, night, wk){
+  var list=presentSlots(), sp={};
+  if(duetSelect && list.length<2) duetSelect=null;
+  for(var i=0;i<list.length;i++){ var s=list[i], p=spriteFor(s); p.mateX=null; p.mateAvoid=false; p.rallyX=null; sp[s.g.id]=p; }
+  var inEvent = duet||gather||confluence||boundary||envMood;
+  for(var i=0;i<list.length;i++) for(var j=i+1;j<list.length;j++){
+    var A=list[i], B=list[j], pa=sp[A.g.id], pb=sp[B.g.id];
+    var sameBand=(A.g.loco===B.g.loco), dist=Math.hypot(pa.x-pb.x, pa.y-pb.y), aff=getAff(A.g.id,B.g.id);
+    if(dist<70) addAff(A.g.id,B.g.id, dt*(sameBand?0.5:0.2));
+    if(sameBand && aff>35){
+      pa.mateX=pb.x; pa.mateAvoid=(temperamentOf(A.g)==="shy");
+      pb.mateX=pa.x; pb.mateAvoid=(temperamentOf(B.g)==="shy");
+    }
+    if(sameBand && aff>30 && dist<46 && !A.s.asleep && !B.s.asleep && !(pa.petT>0) && !(pb.petT>0)){
+      pa.ph += Math.atan2(Math.sin(pb.ph-pa.ph),Math.cos(pb.ph-pa.ph))*Math.min(1,0.6*dt);
+    }
+    if(dist<22 && !A.s.asleep && !B.s.asleep){
+      var k=pairKey(A.g.id,B.g.id);
+      if(!boopCool[k] || now()-boopCool[k]>9000){
+        boopCool[k]=now(); addAff(A.g.id,B.g.id,3);
+        addSparkle((pa.x+pb.x)/2,(pa.y+pb.y)/2-6,"#ffe9b0");
+        purr(wrap(A.s.bond>=B.s.bond?A:B));
+        pa.petT=Math.max(pa.petT||0,0.4); pb.petT=Math.max(pb.petT||0,0.4);
+      }
+    }
+    if(!inEvent && aff>=45 && dist<56 && !A.s.asleep && !B.s.asleep && !(pa.petT>0) && !(pb.petT>0)) maybeConverse(A,B,pa,pb);
+  }
+  if(!duet && !gather && !confluence){ radioDance(list, sp, dt); maybeToy(list, sp, dt); }
+  if(duet) stepDuet(dt, list, sp);
+  else if(gather) stepGather(dt, list, sp);
+  else if(confluence) stepConfluence(dt, list, sp);
+  else {
+    if(eligibleConfluence(list)){
+      confCool-=dt;
+      var prox=clamp(1-(confCool/200),0,1);
+      if(Math.random() < 0.012+prox*0.06){ var c0=list[Math.floor(Math.random()*list.length)], p0=sp[c0.g.id]; if(p0) addSparkle(p0.x+(Math.random()*16-8), p0.y-14*vivScale, "#cfe0ff"); }
+      if(confCool<=0){ confCool=240+Math.random()*180; startConfluence(list); }
+    }
+    else confCool=Math.max(confCool,60);
+    if(!confluence){ updateEnv(dt, list, sp, night, wk); if(!envMood) updateBoundary(dt, list, sp); }
+  }
+}
+
+function startBoundary(list, sp){
+  var byLoco={}; for(var i=0;i<list.length;i++){ if(!list[i].s.asleep) byLoco[list[i].g.loco]=list[i]; }
+  var opts=[];
+  if(byLoco.water && byLoco.land){ opts.push("hello","periscope"); }
+  if(byLoco.air && byLoco.land){ opts.push("shadow"); }
+  if(!opts.length) return;
+  var kind=opts[Math.floor(Math.random()*opts.length)];
+  boundary={kind:kind, t:0, line:false};
+  if(kind==="hello"||kind==="periscope"){ boundary.water=byLoco.water; boundary.land=byLoco.land; boundary.x=clamp(sp[byLoco.land.g.id].x,40,W-40); }
+  else { boundary.air=byLoco.air; boundary.land=byLoco.land; }
+}
+function boundaryLog(txt){ if(Math.random()<0.3){ logDiary(txt); } }
+function updateBoundary(dt, list, sp){
+  if(boundary){
+    boundary.t+=dt; var done=stepBoundary(dt, sp); if(done) endBoundary(sp);
+    return;
+  }
+  boundaryCool-=dt; if(boundaryCool>0) return;
+  boundaryCool=20+Math.random()*22;
+  if(presentSlots().length>=2) startBoundary(list, sp);
+}
+function stepBoundary(dt, sp){
+  var b=boundary, t=b.t, surf=bands.waterY;
+  if(b.kind==="shadow"){
+    var pa=sp[b.air.g.id], pl=sp[b.land.g.id]; if(!pa||!pl) return true;
+    b.shadowX=pa.x; pl.tx=clamp(pa.x,24,W-24);
+    if(t>5){ if(!b.line){ b.line=true; addAff(b.air.g.id,b.land.g.id,4); boundaryLog(b.land.g.name+" chased "+b.air.g.name+"'s shadow across the soil."); } return true; }
+    return false;
+  }
+  var pw=sp[b.water.g.id], pl=sp[b.land.g.id]; if(!pw||!pl) return true;
+  pw.tx=b.x; pl.tx=b.x;
+  if(b.kind==="periscope"){
+    if(t<3.4){ pw.ovY=surf-4; pw.ovDir=(b.x<pw.x?-1:1); pl.ovDir=(pw.x<pl.x?-1:1); b.rippleX=b.x; }
+    else { pw.ovY=null; b.rippleX=null; }
+    if(t>4.6){ if(!b.line){ b.line=true; addAff(b.water.g.id,b.land.g.id,4); boundaryLog(b.water.g.name+" surfaced to watch "+b.land.g.name+"."); } return true; }
+    return false;
+  }
+  /* hello: meet at the waterline, then part */
+  if(t<3){ pw.ovY=surf+6; pl.ovY=surf-10; pw.ovDir=(pl.x<pw.x?-1:1); pl.ovDir=(pw.x<pl.x?-1:1); }
+  else if(t<4.6){ pw.ovY=surf+6; pl.ovY=surf-10; b.rippleX=b.x;
+    if(!b.line){ b.line=true; addSparkle(b.x,surf,"#ffe9b0"); addAff(b.water.g.id,b.land.g.id,5); purr(wrap(b.water)); boundaryLog(b.water.g.name+" and "+b.land.g.name+" met at the waterline."); } }
+  else { pw.ovY=null; pl.ovY=null; b.rippleX=null; }
+  return t>6;
+}
+function endBoundary(sp){
+  if(boundary){
+    ["water","land","air"].forEach(function(key){ var s=boundary[key]; if(s&&sp[s.g.id]){ sp[s.g.id].ovY=null; sp[s.g.id].ovDir=null; } });
+  }
+  boundary=null;
+}
+function drawBoundaryUnder(){
+  if(!boundary) return;
+  if(boundary.shadowX!=null){
+    var x=Math.round(boundary.shadowX), y=bands.landY+6;
+    cx.globalAlpha=0.22; cx.fillStyle="#000";
+    cx.beginPath(); cx.ellipse(x, y, 9, 3, 0, 0, 6.2832); cx.fill(); cx.globalAlpha=1;
+  }
+  if(boundary.rippleX!=null){
+    var rx=Math.round(boundary.rippleX), ph=(anim*3)%1;
+    cx.globalAlpha=0.5-ph*0.5; cx.strokeStyle="#bfe6f2"; cx.lineWidth=1;
+    cx.beginPath(); cx.ellipse(rx, bands.waterY, 6+ph*10, 2+ph*3, 0, 0, 6.2832); cx.stroke(); cx.globalAlpha=1;
+  }
+}
+
+/* ---------- weather and night gatherings + player-initiated moments ---------- */
+var gather=null, duet=null, duetSelect=null, envMood=null, envCool=14;
+function momentBanner(title, sub, dur){
+  dur=dur||2200; moment={kind:"event", t0:now(), dur:dur};
+  var mEl=document.getElementById("moment"), mt=document.getElementById("momentT"), ms=document.getElementById("momentS");
+  if(mt) mt.textContent=title; if(ms) ms.textContent=sub;
+  if(mEl){ mEl.classList.add("on"); setTimeout(function(){ mEl.classList.remove("on"); }, dur-450); }
+  sfx("good"); if(typeof navigator!=="undefined"&&navigator.vibrate){ try{ navigator.vibrate(20); }catch(e){} }
+}
+function shelterX(){
+  for(var i=0;i<save.props.length;i++){ if(save.props[i].type==="lamp") return clamp((save.props[i].fx||0.5)*W,30,W-30); }
+  for(var i=0;i<save.props.length;i++){ var t=save.props[i].type; if(t==="fern"||t==="rock") return clamp((save.props[i].fx||0.5)*W,30,W-30); }
+  return W*0.5;
+}
+function beamX(y){ var bx=W*0.18, top=bx+16, base=bx+84, t=clamp(y/bands.waterY,0,1); return top+(base-top)*t; }
+function groupWish(list, sp){
+  for(var i=0;i<list.length;i++){ var p=sp[list[i].g.id]; if(p) addSparkle(p.x, p.y-14*vivScale, "#dfe9ff"); }
+  for(var i=0;i<list.length;i++) for(var j=i+1;j<list.length;j++) addAff(list[i].g.id,list[j].g.id,2);
+  var act=activeViv(); if(act){ act.s.happy=clamp(act.s.happy+2,0,100); }
+  if(list.length>=2 && Math.random()<0.6){ logDiary("Everyone wished on a falling star."); }
+}
+function envCondHolds(kind, night, wk){
+  var clear=(wk===null||wk==="clear");
+  if(kind==="huddle") return (wk==="rain"||wk==="storm"||wk==="snow");
+  if(kind==="stargaze") return night && clear;
+  if(kind==="bask") return (!night) && clear;
+  return false;
+}
+function pickEnvMood(night, wk, list){
+  if(envCondHolds("huddle",night,wk)){ for(var i=0;i<list.length;i++) if(list[i].g.loco==="land") return "huddle"; }
+  if(envCondHolds("stargaze",night,wk)) return "stargaze";
+  if(envCondHolds("bask",night,wk)) return "bask";
+  return null;
+}
+function applyEnvMood(kind, list, sp){
+  var n=list.length, mid=(n-1)/2;
+  if(kind==="huddle"){
+    var sx=shelterX();
+    for(var i=0;i<n;i++){ if(list[i].g.loco==="land"){ var p=sp[list[i].g.id]; if(p) p.rallyX=sx+(i-mid)*14; } }
+  } else if(kind==="stargaze"){
+    var cxp=W*0.5;
+    for(var i=0;i<n;i++){ var p=sp[list[i].g.id]; if(p) p.rallyX=cxp+(i-mid)*22; }
+    if(star && !star.wished){ groupWish(list, sp); star.wished=true; }
+  } else if(kind==="bask"){
+    for(var i=0;i<n;i++){ var p=sp[list[i].g.id]; if(p) p.rallyX=beamX(p.y)+(i-mid)*12; }
+  }
+}
+function updateEnv(dt, list, sp, night, wk){
+  if(boundary) return;
+  if(envMood){
+    if(now()>=envMood.until || !list.length || !envCondHolds(envMood.kind,night,wk)){ envMood=null; envCool=18+Math.random()*16; return; }
+    applyEnvMood(envMood.kind, list, sp); return;
+  }
+  envCool-=dt; if(envCool>0) return;
+  envCool=18+Math.random()*16;
+  if(!list.length) return;
+  var k=pickEnvMood(night, wk, list);
+  if(k){ envMood={kind:k, until:now()+(12000+Math.random()*8000)};
+    if(k==="huddle") boundaryLog("Everyone huddled close out of the weather.");
+    else if(k==="bask") boundaryLog("Everyone gathered in the sunbeam to bask.");
+  }
+}
+/* Gather: call everyone to the middle for a shared moment */
+function startGather(){
+  if(!presentSlots().length){ toast("No Vivs to gather."); return; }
+  gather={until:now()+5200, chordAt:now()+800, chorded:false, x:W*0.5};
+  closeScrim(); toast("Calling everyone together...");
+}
+function stepGather(dt, list, sp){
+  var n=list.length, mid=(n-1)/2;
+  for(var i=0;i<n;i++){ var p=sp[list[i].g.id]; if(p) p.rallyX=gather.x+(i-mid)*20; }
+  if(!gather.chorded && now()>=gather.chordAt){
+    gather.chorded=true;
+    momentBanner("A GATHERING","everyone drifts together");
+    for(var i=0;i<n;i++){ (function(slot,idx){ var p=sp[slot.g.id]; if(p) addSparkle(p.x,p.y-12*vivScale,(slot.g.palette&&slot.g.palette.accent)||"#ffe9b0"); setTimeout(function(){ speakVoice(wrap(slot),"oo",false); }, idx*160); })(list[i], i); }
+    for(var i=0;i<n;i++) for(var j=i+1;j<n;j++) addAff(list[i].g.id,list[j].g.id,4);
+    logDiary("You called everyone together.");
+    writeSave();
+  }
+  if(now()>=gather.until) gather=null;
+}
+/* Duet: tap two Vivs, they sing call and response in their own voices */
+function startDuetSelect(){
+  if(presentSlots().length<2){ toast("Need two Vivs for a duet."); return; }
+  duetSelect=[]; closeScrim(); toast("Tap two Vivs to duet, or tap the water to cancel.");
+}
+function startDuet(a, b){ duet={a:a, b:b, turn:0, turns:6, next:now()+450, endAt:0}; }
+function stepDuet(dt, list, sp){
+  var a=duet.a, b=duet.b, pa=sp[a.g.id], pb=sp[b.g.id];
+  if(!pa||!pb){ duet=null; return; }
+  var mid=(pa.x+pb.x)/2;
+  pa.rallyX=mid-10; pb.rallyX=mid+10; pa.ovDir=(pb.x>=pa.x?1:-1); pb.ovDir=(pa.x>pb.x?1:-1);
+  if(now()>=duet.next && duet.turn<duet.turns){
+    var who=(duet.turn%2===0)?a:b, wv=wrap(who), u=utter(wv);
+    speakVoice(wv, u.text, u.glyph);
+    showSpeech(u);
+    var p=sp[who.g.id]; if(p) addSparkle(p.x, p.y-14*vivScale, (who.g.palette&&who.g.palette.accent)||"#ffe9b0");
+    duet.turn++; duet.next=now()+(680+Math.random()*240);
+    if(duet.turn>=duet.turns){
+      addAff(a.g.id,b.g.id,8);
+      momentBanner("A DUET", a.g.name+" and "+b.g.name+" sang together");
+      logDiary(a.g.name+" and "+b.g.name+" sang a duet.");
+      writeSave(); duet.endAt=now()+1300;
+    }
+  }
+  if(duet.endAt && now()>=duet.endAt) duet=null;
+}
+
+/* ---------- Confluence: a rare moment where every bloom intertwines into one ---------- */
+var confluence=null, confCool=90;
+function paintConfluence(pc, vivs, w, h, opaqueBg){
+  pc.globalCompositeOperation="source-over"; pc.globalAlpha=1;
+  if(opaqueBg===false){ pc.clearRect(0,0,w,h); }
+  else { pc.fillStyle="#08070d"; pc.fillRect(0,0,w,h); }
+  var pts=Math.round(22000 + w*68);
+  pc.globalCompositeOperation="lighter";
+  for(var vi=0; vi<vivs.length; vi++){
+    var g=vivs[vi].g, pal=g.palette, type=g.genes.body%2;
+    var rng=mulberry32((g.seed ^ 0x9e3779b9)>>>0);
+    var best=null, bestCover=0, bestScore=-1e9;
+    for(var at=0; at<70; at++){
+      var ca=-2.3+rng()*4.6, cb=-2.3+rng()*4.6, cc=-1.5+rng()*3.0, cd=-1.5+rng()*3.0;
+      var L=lyapOf(type,ca,cb,cc,cd), pr=probeOf(type,ca,cb,cc,cd);
+      var score=pr.cover*3 + Math.min(0.4,Math.max(0,L));
+      if(score>bestScore){ bestScore=score; best=[ca,cb,cc,cd]; bestCover=pr.cover; }
+      if(pr.cover>0.18 && L>0.06) break;
+    }
+    var bb=probeOf(type,best[0],best[1],best[2],best[3]).bb, pad=0.13;
+    var bw=Math.max(0.3,bb[1]-bb[0]), bh=Math.max(0.3,bb[3]-bb[2]);
+    var scl=Math.min(w*(1-2*pad)/bw, h*(1-2*pad)/bh);
+    var ang=(vi/Math.max(1,vivs.length))*6.2832, R=w*0.055;
+    var ox=w/2-((bb[0]+bb[1])/2)*scl + Math.cos(ang)*R, oy=h/2-((bb[2]+bb[3])/2)*scl + Math.sin(ang)*R;
+    var stops=[hexToRgb(pal.shade),hexToRgb(pal.base),hexToRgb(pal.accent),hexToRgb(pal.belly)];
+    var x=0.1,y=0.1, baseAlpha=0.055;
+    for(var i=0;i<pts;i++){
+      var p=attrStep(type,best[0],best[1],best[2],best[3],x,y), vx=p[0]-x, vy=p[1]-y; x=p[0]; y=p[1];
+      if(i<40) continue;
+      var px=ox+x*scl, py=oy+y*scl; if(px<0||py<0||px>=w||py>=h) continue;
+      var spd=Math.min(1,Math.sqrt(vx*vx+vy*vy)/2.4), col=rampColor(stops,spd);
+      pc.fillStyle="rgb("+(col[0]|0)+","+(col[1]|0)+","+(col[2]|0)+")";
+      pc.globalAlpha=baseAlpha; pc.fillRect(px|0,py|0,1,1);
+    }
+  }
+  pc.globalCompositeOperation="source-over"; pc.globalAlpha=1;
+  var vg=pc.createRadialGradient(w/2,h/2,Math.min(w,h)*0.2,w/2,h/2,Math.min(w,h)*0.64);
+  vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,.5)");
+  pc.fillStyle=vg; pc.fillRect(0,0,w,h);
+}
+function eligibleConfluence(list){
+  if(list.length<2) return false;
+  for(var i=0;i<list.length;i++) for(var j=i+1;j<list.length;j++){ if(getAff(list[i].g.id,list[j].g.id)<60) return false; }
+  return true;
+}
+function startConfluence(list){
+  var vivs=list.map(function(s){ return {g:s.g}; });
+  var oc=document.createElement("canvas"); oc.width=420; oc.height=420;
+  try{ paintConfluence(oc.getContext("2d"), vivs, 420, 420, false); }catch(e){ return; }
+  confluence={t:0, dur:9, vivs:vivs, canvas:oc, saved:false, banner:false};
+}
+function stepConfluence(dt, list, sp){
+  var c=confluence; c.t+=dt;
+  for(var i=0;i<list.length;i++){ var p=sp[list[i].g.id]; if(p) p.rallyX=W*0.5+(i-(list.length-1)/2)*16; }
+  if(!c.banner && c.t>1.2){ c.banner=true; momentBanner("CONFLUENCE","their blooms intertwine"); }
+  if(!c.saved && c.t>c.dur-1.6){ c.saved=true; saveConfluence(c.vivs); }
+  if(c.t>=c.dur) confluence=null;
+}
+function drawConfluenceOverlay(){
+  if(!confluence||!confluence.canvas) return;
+  var c=confluence, e=c.t/c.dur;
+  var fa = e<0.25 ? (e/0.25) : (e>0.75 ? Math.max(0,1-(e-0.75)/0.25) : 1);
+  if(fa<=0) return;
+  var S=Math.min(W,H)*(0.78+0.14*Math.sin(c.t*0.7)), x=(W-S)/2, y=(H-S)/2;
+  cx.save(); cx.globalCompositeOperation="lighter"; cx.globalAlpha=0.9*fa;
+  cx.drawImage(c.canvas, x, y, S, S);
+  cx.restore();
+}
+function saveConfluence(vivs){
+  if(!Array.isArray(save.blooms)) save.blooms=[];
+  save.blooms.unshift({ vivs: vivs.map(function(v){ return {seed:v.g.seed, body:v.g.genes.body, palette:v.g.palette, name:v.g.name}; }), at:now() });
+  if(save.blooms.length>12) save.blooms.pop();
+  var names=vivs.map(function(v){return v.g.name;}).join(" and ");
+  logDiary("The blooms of "+names+" intertwined in a confluence.");
+  writeSave();
+}
+function pseudoVivs(e){ return e.vivs.map(function(x){ return {g:{seed:x.seed, genes:{body:x.body}, palette:x.palette, name:x.name}}; }); }
+function openBlooms(){
+  if(!save.blooms||!save.blooms.length){ toast("No shared blooms yet. They form during a confluence."); return; }
+  openPanel("SHARED BLOOMS","<p>Blooms that intertwined when the tank was fully at ease.</p><div id=\"bloomGrid\" style=\"display:grid;grid-template-columns:repeat(3,1fr);gap:8px\"></div>", function(){
+    var grid=document.getElementById("bloomGrid");
+    for(var i=0;i<save.blooms.length;i++){ (function(idx){
+      var cnv=document.createElement("canvas"); cnv.width=160; cnv.height=160;
+      cnv.style.width="100%"; cnv.style.display="block"; cnv.style.borderRadius="4px"; cnv.style.cursor="pointer"; cnv.style.background="#08070d";
+      grid.appendChild(cnv);
+      try{ paintConfluence(cnv.getContext("2d"), pseudoVivs(save.blooms[idx]), 160, 160); }catch(e){}
+      cnv.onclick=function(){ openBloomView(idx); };
+    })(i); }
+  });
+}
+function openBloomView(idx){
+  var e=save.blooms[idx]; if(!e) return;
+  var names=e.vivs.map(function(x){return x.name;}).join(" + ");
+  openPanel("A CONFLUENCE",
+    '<p>'+escapeHtml(names)+'</p><canvas id="cbloom" width="720" height="720" style="width:100%;display:block;border:2px solid #000;border-radius:4px;background:#08070d"></canvas>'+
+    '<div class="row" style="margin-top:12px"><button class="btn" id="cbBack"><span class="ic">&#11013;</span>Back</button><button class="btn" id="cbSave"><span class="ic">&#11015;</span>Save image</button></div>',
+    function(){
+      try{ paintConfluence(document.getElementById("cbloom").getContext("2d"), pseudoVivs(e), 720, 720); }catch(err){}
+      var bk=document.getElementById("cbBack"); if(bk) bk.onclick=openBlooms;
+      var btn=document.getElementById("cbSave"); if(btn) btn.onclick=function(){
+        var c=document.getElementById("cbloom");
+        try{ c.toBlob(function(blob){ if(!blob){ toast("Could not save the image."); return; } var url=URL.createObjectURL(blob), a=document.createElement("a"); a.href=url; a.download=("confluence-"+names+".png").replace(/[^a-z0-9.\-]/gi,"_"); document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function(){URL.revokeObjectURL(url);},1500); toast("Saved the confluence."); },"image/png"); }
+        catch(err){ toast("Could not save the image."); }
+      };
+    });
+}
+
+/* ---------- language as social history: converse, teach, converge on shared words ---------- */
+function slotById(id){ for(var i=0;i<3;i++){ var s=save.slots[i]; if(s&&s.g.id===id) return s; } return null; }
+function cleanMean(con){ return (REAL[con]||con).replace(/^i /,"").replace(/ please$/,""); }
+function glossRow(word, right){ return '<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #1c1a16;padding:1px 0"><span class="glyph" style="color:var(--brass-hi)">'+escapeHtml(word)+'</span><span style="color:var(--crt-dim)">'+right+'</span></div>'; }
+function sharedWordFor(idA, idB, con){
+  var sa=slotById(idA), sb=slotById(idB), seedA=sa?sa.g.seed:0, seedB=sb?sb.g.seed:0;
+  var r=mulberry32((seedA ^ seedB ^ hashStr(con) ^ 0x51ed270b)>>>0);
+  var pool=SOFT.concat(HARD), parts=2+(r()<0.5?1:0), w="";
+  for(var j=0;j<parts;j++) w+=pick(r,pool);
+  return w;
+}
+function sharedWordsFor(id){
+  var out=[]; if(!save.sharedWords) return out;
+  for(var k in save.sharedWords){ var p=k.split("~"); if(p[0]===id||p[1]===id){ var other=(p[0]===id)?p[1]:p[0], m=save.sharedWords[k]; for(var con in m) out.push({con:con, word:m[con], withName:nameOfId(other)||"a friend"}); } }
+  return out;
+}
+function addShared(idA, idB, con){
+  if(!save.sharedWords) save.sharedWords={}; var k=pairKey(idA,idB), m=save.sharedWords[k]||(save.sharedWords[k]={});
+  if(m[con] || Object.keys(m).length>=4) return;
+  m[con]=sharedWordFor(idA,idB,con);
+  var na=nameOfId(idA), nb=nameOfId(idB); if(na&&nb) logDiary(na+" and "+nb+" made a word for "+cleanMean(con)+".");
+  writeSave();
+}
+function teach(learner, teacher, con){
+  if(CONCEPTS.indexOf(con)<0) return;
+  if(!learner.s.taught) learner.s.taught={};
+  if(learner.s.taught[con]) return;
+  learner.s.taught[con]={ w: vivLex(teacher.g)[con], from: teacher.g.id, name: teacher.g.name };
+  if(Math.random()<0.5) logDiary(learner.g.name+" learned "+teacher.g.name+"'s word for "+cleanMean(con)+".");
+}
+var convo={};
+function maybeConverse(A,B,pa,pb){
+  var k=pairKey(A.g.id,B.g.id), c=convo[k]||(convo[k]={n:0,last:0});
+  if(now()-c.last < 9000) return;
+  if(Math.random()<0.5){ c.last=now()-5000; return; }
+  c.last=now(); c.n++;
+  var aff=getAff(A.g.id,B.g.id), rr=mulberry32((A.g.seed^B.g.seed^c.n)>>>0), con=pick(rr,CONCEPTS);
+  if(!save.muted){ speakVoice(wrap(A), vivLex(A.g)[con], (A.s.langTier||0)<2); setTimeout(function(){ try{ speakVoice(wrap(B), vivLex(B.g)[con], (B.s.langTier||0)<2); }catch(e){} }, 430); }
+  addSparkle((pa.x+pb.x)/2,(pa.y+pb.y)/2-8,"#cfe0ff");
+  addAff(A.g.id,B.g.id,0.5);
+  if(aff>=55 && Math.random()<0.5){ var learner=rr()<0.5?A:B, teacher=(learner===A)?B:A; teach(learner,teacher,con); }
+  if(aff>=70 && c.n>=4) addShared(A.g.id,B.g.id,con);
+}
+/* shared toy: two land Vivs bat a tank curio between them */
+var toyCool=0;
+function maybeToy(list, sp, dt){
+  toyCool-=dt; if(toyCool>0 || !save.tankCurios.length) return;
+  var land=list.filter(function(s){ return s.g.loco==="land" && !s.s.asleep; });
+  if(land.length<2) return;
+  for(var ci=0;ci<save.tankCurios.length;ci++){
+    var cu=save.tankCurios[ci], cx0=clamp((cu.fx||0.5)*W,10,W-10);
+    var near=land.filter(function(s){ return Math.abs(sp[s.g.id].x-cx0)<64; });
+    if(near.length>=2){
+      var pa=sp[near[0].g.id], pb=sp[near[1].g.id];
+      var target=(Math.abs(pa.x-cx0)>Math.abs(pb.x-cx0))?pa.x:pb.x;
+      cu.fx=clamp((cx0+(target-cx0)*0.5)/W,0.04,0.96); cu.hop=0.4;
+      addSparkle(cx0,bands.landY+4,"#ffe9b0");
+      addAff(near[0].g.id,near[1].g.id,0.8);
+      toyCool=2.2+Math.random()*1.6; return;
+    }
+  }
+}
+/* radio dance: Vivs near a radio prop sway in time */
+function radioDance(list, sp, dt){
+  var radio=null; for(var i=0;i<save.props.length;i++){ if(save.props[i].type==="radio"){ radio=save.props[i]; break; } }
+  for(var i=0;i<list.length;i++){ var s=list[i], p=sp[s.g.id]; if(!p) continue;
+    var want=0;
+    if(radio && s.g.loco==="land" && !s.s.asleep){ var rx=clamp((radio.fx||0.5)*W,10,W-10); if(Math.abs(p.x-rx)<74) want=1; }
+    p.dance = want ? Math.min(1,(p.dance||0)+dt*2) : Math.max(0,(p.dance||0)-dt*2);
+  }
+}
+
 function spriteFor(slot){
 
   var id=slot.g.id;
@@ -1141,9 +1852,7 @@ function spriteFor(slot){
 
 function drawScene(ts){
   var dt=Math.min(0.05,(ts-lastFrame)/1000||0); lastFrame=ts; anim+=dt;
-  var night = (function(){var a=activeViv(); var dark=(a && a.s.lightsOn===false);
-    if(WX.on && WX.code!=null) return dark || !WX.isDay;
-    return dark || isNight();})();
+  var night = isDark();
   var wk=(WX.on && WX.code!=null)?WX.kind:null;
   /* sky, tinted by the weather outside */
   var skc=skyColors(night,wk);
@@ -1171,13 +1880,12 @@ function drawScene(ts){
   drawCaustics(night); drawBubbles(); drawDust(night);
   drawProps("land"); drawProps("water"); drawTankCurios();
 
-  /* poops belong to the active viv, drawn on the soil */
-  var av=activeViv();
-  if(av){
-    for(var i=0;i<av.s.poops.length;i++){
-      var pp=av.s.poops[i]; drawPoop(pp.x, bands.landY+8+(i%2)*5);
-    }
-  }
+  /* poops sit on the shared soil, not tied to any one Viv */
+  for(var pi=0;pi<save.poops.length;pi++){ drawPoop(save.poops[pi].x, bands.landY+8+(pi%2)*5); }
+
+  /* inter-Viv social pass (affinity, ambient behaviors, boundary scenes) */
+  socialPre(dt, night, wk);
+  drawBoundaryUnder();
 
   /* draw each viv in its band */
   for(var k=0;k<3;k++){
@@ -1185,11 +1893,16 @@ function drawScene(ts){
     if(!slot) continue;
     var sp=spriteFor(slot);
     updateMotion(slot, sp, dt);
-    if(slot.s.egg) drawEgg(slot, sp);
+    if(isVisiting(slot)) drawAwayMarker(sp);
+    else if(slot.s.egg) drawEgg(slot, sp);
     else { drawViv(slot, sp, k===save.active, vivScale); vivPropReaction(slot, sp); }
   }
   maybeSpawnWild(night); updateWild(dt);
   if(wild) drawViv(wild.slot, wild.sp, false, vivScale*0.85);
+  if(guestActive()){ ensureGuestRT(); var gsp=spriteFor(guestRT.slot); updateMotion(guestRT.slot, gsp, dt); drawViv(guestRT.slot, gsp, false, vivScale); drawGuestTag(gsp); }
+  else if(save.guest){ save.guest=null; guestRT=null; }
+  drawSparkles();
+  drawConfluenceOverlay();
   drawFireflies(night,wk);
   maybeSpawnStar(night,wk); drawStar(dt);
   drawWeatherFront(wk, dt);
@@ -1204,8 +1917,14 @@ function updateMotion(slot, sp, dt){
   sp.ph+=dt;
   if(sp.petT>0){ sp.petT-=dt; sp.petPh=(sp.petPh||0)+dt*22; }
   if(asleep){ sp.y=sp.baseY+Math.sin(anim*1.5)*1; return; }
-  /* wander horizontally */
-  if(Math.abs(sp.x-sp.tx)<3){ sp.tx=24+Math.random()*(W-48); }
+  /* wander horizontally, with a gentle pull toward a friend */
+  if(Math.abs(sp.x-sp.tx)<3){
+    if(sp.rallyX!=null){ sp.tx=clamp(sp.rallyX+(Math.random()*22-11),24,W-24); }
+    else if(sp.mateX!=null && Math.random()<0.55){
+      if(sp.mateAvoid){ var away=sp.mateX>W/2?-1:1; sp.tx=clamp(sp.mateX+away*(55+Math.random()*45),24,W-24); }
+      else sp.tx=clamp(sp.mateX+(Math.random()*36-18),24,W-24);
+    } else sp.tx=24+Math.random()*(W-48);
+  }
   var spd=(loco==="air"?22:loco==="water"?16:12);
   var d=(sp.tx>sp.x?1:-1); sp.dir=d; sp.x+=d*spd*dt;
   if(loco==="air") sp.y=sp.baseY+Math.sin(sp.ph*1.6)*10;
@@ -1215,6 +1934,9 @@ function updateMotion(slot, sp, dt){
     var hp=sp.hop>0? Math.sin((0.5-sp.hop)/0.5*Math.PI)*9 : 0;
     sp.y=sp.baseY-hp;
   }
+  if(sp.dance>0) sp.y -= (0.5+0.5*Math.sin(anim*5))*4*sp.dance;
+  if(sp.ovY!=null){ sp.y += (sp.ovY - sp.y)*Math.min(1,6*dt); }
+  if(sp.ovDir!=null) sp.dir=sp.ovDir;
 }
 
 function drawPoop(x,y){
@@ -1342,6 +2064,7 @@ function drawSkull(x,y){
 
 /* ---------- UI ---------- */
 var speechEl=document.getElementById("speech");
+function showSpeech(u){ speechEl.innerHTML = u.glyph ? '<span class="glyph">'+escapeHtml(u.text)+'</span>' : escapeHtml(u.text); }
 var metaName=document.getElementById("metaName"), metaStage=document.getElementById("metaStage");
 var gaugesEl=document.getElementById("gauges"), tabsEl=document.getElementById("tabs");
 var callTag=document.getElementById("callTag");
@@ -1352,7 +2075,7 @@ function renderGauges(v){
   gaugesEl.innerHTML="";
   for(var i=0;i<GAUGES.length;i++){
     var key=GAUGES[i][1], val;
-    if(key==="_clean") val=clamp(100 - v.s.poops.length*20,0,100);
+    if(key==="_clean") val=clamp(100 - save.poops.length*20,0,100);
     else val=v.s[key];
     var g=document.createElement("div"); g.className="gauge";
     var lab=document.createElement("div"); lab.className="lab"; lab.textContent=GAUGES[i][0];
@@ -1368,7 +2091,7 @@ function renderTabs(){
       var slot=save.slots[idx];
       var b=document.createElement("button"); b.className="tab"+(idx===save.active?" active":"")+(slot?"":" empty");
       b.setAttribute("role","tab");
-      if(slot){ b.innerHTML='<div class="n">'+escapeHtml(slot.g.name)+'</div>'+slot.g.loco; }
+      if(slot){ b.innerHTML='<div class="n">'+escapeHtml(slot.g.name)+'</div>'+(isVisiting(slot)?'<span style="color:var(--brass)">visiting</span>':escapeHtml(slot.g.loco))+((slot.s.calling&&!slot.s.egg)?'<span class="calldot"></span>':''); }
       else { b.innerHTML='<div class="n">empty</div>tap to hatch'; }
       b.onclick=function(){ save.active=idx; if(!slot){ openHatch(); } else { writeSave(); refresh(); } };
       tabsEl.appendChild(b);
@@ -1390,7 +2113,7 @@ function refresh(){
   metaName.textContent=v.g.name.toUpperCase();
   metaStage.textContent=stageOf(v.slot).toUpperCase()+(v.s.weight>78?" \u00b7 PLUMP":"");
   renderGauges(v);
-  var u=utter(v); speechEl.innerHTML=u.glyph?'<span class="glyph">'+escapeHtml(u.text)+'</span>':escapeHtml(u.text);
+  var u=utter(v); showSpeech(u);
   callTag.style.display=v.s.calling?"block":"none";
   callTag.textContent = v.s.calling ? "! "+v.g.name.toUpperCase()+" WANTS YOU !" : "";
 }
@@ -1419,8 +2142,8 @@ var actions={
   feed:function(v){ if(asleepGuard(v))return; openFeed(v); },
   play:function(v){ if(asleepGuard(v))return; openPlay(v); },
   clean:function(v){
-    if(v.s.poops.length===0){ toast("Nothing to clean. Tidy already."); return; }
-    v.s.poops=[]; v.s.happy=clamp(v.s.happy+4,0,100); v.s.bond=clamp(v.s.bond+1,0,100);
+    if(save.poops.length===0){ toast("Nothing to clean. Tidy already."); return; }
+    save.poops=[]; v.s.happy=clamp(v.s.happy+4,0,100); v.s.bond=clamp(v.s.bond+1,0,100);
     bump(v,"clean"); resolveCall(v,true); sfx("bubble"); toast("All tidy."); after(v);
   },
   meds:function(v){
@@ -1431,10 +2154,11 @@ var actions={
     after(v);
   },
   lights:function(v){
-    v.s.lightsOn=!v.s.lightsOn;
-    if(!v.s.lightsOn && isNight()) v.s.asleep=true;
-    if(v.s.lightsOn) v.s.asleep=false;
-    sfx(); toast("Lights "+(v.s.lightsOn?"on":"off")+"."); after(v);
+    save.lightsOn=!save.lightsOn;
+    for(var i=0;i<3;i++){ var sl=save.slots[i]; if(!sl||sl.s.egg) continue;
+      sl.s.asleep = !save.lightsOn;
+    }
+    sfx(); toast("Lights "+(save.lightsOn?"on":"off")+"."); after(v);
   },
   scold:function(v){ if(asleepGuard(v))return;
     if(v.s.calling && v.s.callKind==="naughty"){
@@ -1448,7 +2172,7 @@ var actions={
     }
     after(v);
   },
-  talk:function(v){ var u=utter(v); speechEl.innerHTML=u.glyph?'<span class="glyph">'+escapeHtml(u.text)+'</span>':escapeHtml(u.text); v.s.bond=clamp(v.s.bond+0.5,0,100); bump(v,"talk"); checkLang(v); learnConcept(v,u.con); speakVoice(v,u.text,u.glyph); writeSave(); },
+  talk:function(v){ var u=utter(v); showSpeech(u); v.s.bond=clamp(v.s.bond+0.5,0,100); bump(v,"talk"); checkLang(v); learnConcept(v,u.con); speakVoice(v,u.text,u.glyph); writeSave(); },
   art:function(v){ openArt(v); },
   more:function(){ openMenu(); }
 };
@@ -1460,6 +2184,7 @@ document.getElementById("controls").addEventListener("click",function(e){
   var act=b.getAttribute("data-act");
   if(act==="more"){ actions.more(); return; }
   var v=activeViv(); if(!need(v)) return;
+  if(visitGuard(v)) return;
   actions[act](v);
 });
 
@@ -1713,6 +2438,11 @@ function openMenu(){
       (v?'<button class="btn" id="mExport"><span class="ic">&#11015;</span>Export '+escapeHtml(v.g.name)+' (trade)</button>':'')+
       (v&&!v.slot.egg?'<button class="btn" id="mCard"><span class="ic">&#128209;</span>Field card</button>':'')+
       (v&&!v.slot.egg?'<button class="btn" id="mBloom"><span class="ic">&#127912;</span>View the bloom</button>':'')+
+      (v&&!v.slot.egg?'<button class="btn" id="mSend"><span class="ic">&#128279;</span>Send a Viv to play</button>':'')+
+      (presentSlots().length>=2?'<button class="btn" id="mGather"><span class="ic">&#127881;</span>Call them together</button>':'')+
+      (presentSlots().length>=2?'<button class="btn" id="mDuet"><span class="ic">&#127925;</span>Start a duet</button>':'')+
+      (guestActive()?'<button class="btn" id="mBye"><span class="ic">&#128075;</span>Say goodbye to visitor</button>':'')+
+      (save.blooms&&save.blooms.length?'<button class="btn" id="mBlooms"><span class="ic">&#127750;</span>Shared blooms</button>':'')+
       '<button class="btn" id="mImport"><span class="ic">&#11014;</span>Import a Viv</button>'+
       '<button class="btn" id="mExportAll"><span class="ic">&#128190;</span>Back up whole vivarium</button>'+
       '<button class="btn" id="mRestore"><span class="ic">&#128229;</span>Restore from a backup</button>'+
@@ -1730,6 +2460,11 @@ function openMenu(){
   bind("mCard",function(){ openCard(v); });
   bind("mBloom",function(){ openArt(v); });
   bind("mImport",function(){ document.getElementById("fileIn").click(); });
+  bind("mSend",function(){ openSend(v); });
+  bind("mGather",function(){ startGather(); });
+  bind("mDuet",function(){ startDuetSelect(); });
+  bind("mBye",function(){ sayGoodbye(); });
+  bind("mBlooms",function(){ openBlooms(); });
   bind("mExportAll",function(){ exportVivarium(); });
   bind("mRestore",function(){ document.getElementById("fileIn").click(); });
   bind("mFree",function(){ openFree(v); });
@@ -1866,7 +2601,18 @@ function petViv(slot, sp){
   if(typeof navigator!=="undefined" && navigator.vibrate){ try{ navigator.vibrate(10); }catch(e){} }
 }
 function tankTap(px,py){
+  if(duetSelect){
+    var picked=null;
+    for(var k=0;k<3;k++){ var s2=save.slots[k]; if(!s2||s2.s.egg||isVisiting(s2)) continue; var p2=spriteFor(s2); if(Math.hypot(px-p2.x,py-p2.y)<40){ picked=s2; break; } }
+    if(picked && duetSelect.indexOf(picked)<0){
+      duetSelect.push(picked); var pp=spriteFor(picked); addSparkle(pp.x,pp.y-14*vivScale,"#ffe9b0"); sfx("good");
+      if(duetSelect.length===1) toast("Now tap a second Viv.");
+      else if(duetSelect.length>=2){ startDuet(duetSelect[0], duetSelect[1]); duetSelect=null; }
+    } else if(!picked){ duetSelect=null; toast("Duet cancelled."); }
+    return;
+  }
   if(star){ var se=(now()-star.t0)/1000; if(se<star.life && Math.hypot(px-star.x,py-star.y)<28){ wishOnStar(); return; } }
+  if(guestActive()){ ensureGuestRT(); var gsp=spriteFor(guestRT.slot); if(Math.hypot(px-gsp.x,py-gsp.y)<44){ gsp.petT=0.7; gsp.petPh=0; purr({g:save.guest.g, s:guestRT.slot.s}); if(typeof navigator!=="undefined"&&navigator.vibrate){try{navigator.vibrate(8);}catch(e){}} return; } }
   for(var c=0;c<save.tankCurios.length;c++){ var cu=save.tankCurios[c]; if(Math.hypot(px-clamp((cu.fx||0.5)*W,10,W-10), py-(bands.landY+10))<18){ collectCurio(c); return; } }
   for(var k=0;k<3;k++){
     var slot=save.slots[k]; if(!slot) continue; var sp=spriteFor(slot);
@@ -1875,7 +2621,7 @@ function tankTap(px,py){
     }
   }
   var best=null,bestSlot=null,bestD=1e9;
-  for(var j=0;j<3;j++){ var s2=save.slots[j]; if(!s2||s2.s.egg) continue; var p2=spriteFor(s2); var d=Math.hypot(px-p2.x,py-p2.y); if(d<bestD){ bestD=d; best=p2; bestSlot=s2; } }
+  for(var j=0;j<3;j++){ var s2=save.slots[j]; if(!s2||s2.s.egg||isVisiting(s2)) continue; var p2=spriteFor(s2); var d=Math.hypot(px-p2.x,py-p2.y); if(d<bestD){ bestD=d; best=p2; bestSlot=s2; } }
   if(best && bestD<44){ petViv(bestSlot, best); }
 }
 cv.addEventListener("pointermove", function(e){ tankPoint(e); });
@@ -1892,9 +2638,11 @@ document.getElementById("wxBtn").onclick=wxToggle;
 /* ---------- boot ---------- */
 function boot(){
   loadSave();
+  checkReturns(false);
   var awayGap=computeGap(), curBefore=save.tankCurios.length;
   catchUp();
   maybeAwayLog(awayGap, save.tankCurios.length-curBefore);
+  receiveVisitorFromUrl();
   document.getElementById("muteBtn").textContent=save.muted?"SND OFF":"SND ON";
   wxLoad(); wxUpdateChip();
   if(WX.on && WX.lat!=null && WX.lon!=null) wxFetch();
@@ -1907,17 +2655,20 @@ function boot(){
   /* steady tick every 4s for live decay while open */
   setInterval(function(){
     var t=now();
+    checkReturns(true);
     for(var i=0;i<3;i++){ var slot=save.slots[i]; if(!slot) continue; var dt=(t-(slot.s.lastTick||t))/1000; if(dt>0) tickViv(slot,dt); slot.s.lastTick=t;
       if(!slot.s.egg){ var st2=stageOf(slot); if(slot.s.stage && slot.s.stage!==st2 && save.slots[save.active]===slot) triggerMoment("evolve", wrap(slot)); slot.s.stage=st2; } }
     if(activeViv() && activeViv().s.calling) { /* gentle nudge */ }
     writeSave(); refresh();
   },4000);
   /* speech refresh */
-  setInterval(function(){ var v=activeViv(); if(v && !v.slot.egg){ var u=utter(v); speechEl.innerHTML=u.glyph?'<span class="glyph">'+escapeHtml(u.text)+'</span>':escapeHtml(u.text); if(learnConcept(v,u.con)) writeSave(); } },5000);
+  setInterval(function(){ if(duet) return; var v=activeViv(); if(v && !v.slot.egg){ var u=utter(v); showSpeech(u); if(learnConcept(v,u.con)) writeSave(); } },5000);
 
   var anyViv=save.slots.some(function(s){return s;});
   if(!anyViv){ openHatch(); }
   else if(save.pendingAway){ var txt=save.pendingAway; save.pendingAway=null; writeSave(); setTimeout(function(){ showAway(txt); }, 900); }
+  if(save.pendingReturn){ var rt=save.pendingReturn; save.pendingReturn=null; writeSave(); setTimeout(function(){ toast(rt); }, 1200); }
+  if(save.pendingVisitor){ var vn=save.pendingVisitor; save.pendingVisitor=null; writeSave(); setTimeout(function(){ toast(vn+" has come to visit. Tap them to play!"); }, 1500); }
 }
 window.addEventListener("load",function(){ setTimeout(fitCanvas,30); });
 boot();
