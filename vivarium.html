@@ -91,6 +91,8 @@
   }
   .chip:hover{background:var(--btn-hi);color:var(--ivory)}
   .chip:focus-visible{outline:2px solid var(--brass);outline-offset:1px}
+  .chip.rec{color:#ff8a8a;border-color:#ff6b6b;animation:micpulse 1.1s ease-in-out infinite}
+  @keyframes micpulse{0%,100%{box-shadow:0 0 0 0 rgba(255,107,107,.55)}50%{box-shadow:0 0 0 5px rgba(255,107,107,0)}}
 
   /* The glass tank */
   .tankwrap{
@@ -232,6 +234,7 @@
   @media (prefers-reduced-motion:reduce){
     .calltag{animation:none}
     .tab .calldot{animation:none}
+    .chip.rec{animation:none}
   }
 </style>
 </head>
@@ -246,6 +249,7 @@
       <div class="tools">
         <button class="chip" id="muteBtn" aria-label="Toggle sound">SND ON</button>
         <button class="chip" id="wxBtn" aria-label="Toggle weather">WX OFF</button>
+        <button class="chip" id="micBtn" aria-label="Talk to your Vivs">MIC</button>
         <button class="chip" id="menuBtn" aria-label="Open menu">MENU</button>
       </div>
     </div>
@@ -571,7 +575,7 @@ function rampColor(stops,t){var n=stops.length-1,f=clamp(t,0,1)*n,i=Math.floor(f
 
 /* ---------- the save (up to 3 slots) ---------- */
 var SAVE_KEY="vivarium_save_v1";
-var APP_VERSION="0.6.4";          /* bump on release */
+var APP_VERSION="0.7.0";          /* bump on release */
 var APP_BUILD="2026-06-21";       /* build date */
 var SCHEMA=2;                     /* save-format version, grown for props/curios/diary/learned */
 var save={slots:[null,null,null], active:0, muted:false};
@@ -1435,6 +1439,18 @@ function presentSlots(){ var r=[]; for(var i=0;i<3;i++){ var s=save.slots[i]; if
 
 var sparkles=[];
 function addSparkle(x,y,hue){ sparkles.push({x:x,y:y,t0:now(),hue:hue||"#e7c277"}); if(sparkles.length>24) sparkles.shift(); }
+var hearts=[];
+function addHeart(x,y){ hearts.push({x:x,y:y,t0:now()}); if(hearts.length>30) hearts.shift(); }
+function drawHearts(){
+  var t=now();
+  for(var i=hearts.length-1;i>=0;i--){ var h=hearts[i], a=(t-h.t0)/1100; if(a>=1){ hearts.splice(i,1); continue; }
+    var x=Math.round(h.x+Math.sin(a*6+h.x)*2), y=Math.round(h.y-a*18); cx.globalAlpha=Math.max(0,1-a);
+    cx.fillStyle="#ff7d9c";
+    cx.fillRect(x-1,y-1,1,1); cx.fillRect(x+1,y-1,1,1);
+    cx.fillRect(x-1,y,3,1); cx.fillRect(x,y+1,1,1);
+  }
+  cx.globalAlpha=1;
+}
 function drawSparkles(){
   for(var i=sparkles.length-1;i>=0;i--){ var s=sparkles[i], e=(now()-s.t0)/700; if(e>=1){ sparkles.splice(i,1); continue; }
     var r=2+e*7;
@@ -1902,6 +1918,7 @@ function drawScene(ts){
   if(guestActive()){ ensureGuestRT(); var gsp=spriteFor(guestRT.slot); updateMotion(guestRT.slot, gsp, dt); drawViv(guestRT.slot, gsp, false, vivScale); drawGuestTag(gsp); }
   else if(save.guest){ save.guest=null; guestRT=null; }
   drawSparkles();
+  drawHearts();
   drawConfluenceOverlay();
   drawFireflies(night,wk);
   maybeSpawnStar(night,wk); drawStar(dt);
@@ -1916,6 +1933,7 @@ function updateMotion(slot, sp, dt){
   var loco=slot.g.loco, asleep=slot.s.asleep;
   sp.ph+=dt;
   if(sp.petT>0){ sp.petT-=dt; sp.petPh=(sp.petPh||0)+dt*22; }
+  if(sp.react>0){ sp.react-=dt; sp.reactPh=(sp.reactPh||0)+dt; }
   if(asleep){ sp.y=sp.baseY+Math.sin(anim*1.5)*1; return; }
   /* wander horizontally, with a gentle pull toward a friend */
   if(Math.abs(sp.x-sp.tx)<3){
@@ -1935,6 +1953,7 @@ function updateMotion(slot, sp, dt){
     sp.y=sp.baseY-hp;
   }
   if(sp.dance>0) sp.y -= (0.5+0.5*Math.sin(anim*5))*4*sp.dance;
+  if(sp.react>0){ sp.y -= Math.abs(Math.sin(sp.reactPh*15))*9; sp.dir=(sp.x<W/2)?1:-1; }
   if(sp.ovY!=null){ sp.y += (sp.ovY - sp.y)*Math.min(1,6*dt); }
   if(sp.ovDir!=null) sp.dir=sp.ovDir;
 }
@@ -2634,8 +2653,65 @@ document.getElementById("muteBtn").onclick=function(){
 };
 document.getElementById("menuBtn").onclick=openMenu;
 document.getElementById("wxBtn").onclick=wxToggle;
+(function(){ var _mic=document.getElementById("micBtn"); if(_mic){ if(speechSupported()){ _mic.onclick=toggleListen; updateMicChip(); } else { _mic.style.display="none"; } } })();
 
 /* ---------- boot ---------- */
+/* ---------- talk to your Vivs: microphone + speech to text ---------- */
+var SR = (typeof window!=="undefined") && (window.SpeechRecognition || window.webkitSpeechRecognition);
+var recog=null, listenOn=false, listenTimer=null;
+function speechSupported(){ return !!SR; }
+function updateMicChip(){ var b=document.getElementById("micBtn"); if(!b) return; b.textContent=listenOn?"LISTENING":"MIC"; if(listenOn) b.classList.add("rec"); else b.classList.remove("rec"); }
+function ensureRecog(){
+  if(recog || !SR) return recog;
+  recog=new SR();
+  recog.continuous=true; recog.interimResults=false;
+  try{ recog.lang = navigator.language || "en-US"; }catch(e){}
+  recog.onresult=function(ev){ var said=""; for(var i=ev.resultIndex;i<ev.results.length;i++){ if(ev.results[i].isFinal) said+=" "+ev.results[i][0].transcript; } if(said.trim()) heardNames(said); };
+  recog.onerror=function(ev){ var er=ev&&ev.error;
+    if(er==="not-allowed"||er==="service-not-allowed"){ stopListen(); toast("Microphone blocked. Allow mic access to talk to your Vivs."); }
+    else if(er==="audio-capture"){ stopListen(); toast("No microphone found."); }
+  };
+  recog.onend=function(){ if(listenOn){ try{ recog.start(); }catch(e){} } };
+  return recog;
+}
+function startListen(){
+  if(!SR){ toast("Speech recognition is not supported in this browser."); return; }
+  ensureRecog(); listenOn=true; updateMicChip();
+  try{ recog.start(); }catch(e){}
+  toast("Listening. Say a Viv's name.");
+  showSpeech({text:"listening...", glyph:false});
+  clearTimeout(listenTimer); listenTimer=setTimeout(function(){ if(listenOn){ stopListen(); toast("Stopped listening."); } }, 60000);
+}
+function stopListen(){ listenOn=false; updateMicChip(); clearTimeout(listenTimer); if(recog){ try{ recog.stop(); }catch(e){} } }
+function toggleListen(){ if(listenOn) stopListen(); else startListen(); }
+function lev(a,b){ if(a===b) return 0; var m=a.length,n=b.length; if(!m) return n; if(!n) return m;
+  var prev=[],cur=[],i,j; for(j=0;j<=n;j++) prev[j]=j;
+  for(i=1;i<=m;i++){ cur[0]=i; for(j=1;j<=n;j++){ var c=a.charAt(i-1)===b.charAt(j-1)?0:1; cur[j]=Math.min(cur[j-1]+1, prev[j]+1, prev[j-1]+c); } for(j=0;j<=n;j++) prev[j]=cur[j]; }
+  return prev[n];
+}
+function heardNames(text){
+  text=(""+text).toLowerCase();
+  var words=text.split(/[^a-z]+/).filter(Boolean), pl=presentSlots(), any=false;
+  for(var i=0;i<pl.length;i++){ var slot=pl[i]; if(slot.s.asleep) continue;
+    var nm=slot.g.name.toLowerCase();
+    var hit = text.indexOf(nm)>=0 || words.some(function(w){ return w===nm || (nm.length>=4 && lev(w,nm)<=1); });
+    if(hit) nameReact(slot), any=true;
+  }
+  return any;
+}
+function nameReact(slot){
+  var s=slot.s; if(s.egg || s.asleep) return;
+  var sp=spriteFor(slot);
+  sp.react=1.7; sp.reactPh=0;
+  for(var i=0;i<5;i++) addHeart(sp.x+(Math.random()*14-7), sp.y-12*vivScale-Math.random()*6);
+  addSparkle(sp.x, sp.y-14*vivScale, "#ffd0e0");
+  s.happy=clamp(s.happy+5,0,100); s.bond=clamp(s.bond+2,0,100);
+  purr(slot);
+  if(slot===save.slots[save.active]) showSpeech({text:"\u2665", glyph:false});
+  if(Math.random()<0.5) logDiary(slot.g.name+" perked up when you called its name.");
+  writeSave(); refresh();
+}
+
 function boot(){
   loadSave();
   checkReturns(false);
